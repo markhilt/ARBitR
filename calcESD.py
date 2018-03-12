@@ -4,7 +4,6 @@ from scipy.stats import t
 def esd_critical(alpha, n, i):
     '''
     Compute the critical value for ESD Test
-
     '''
     df = n - i - 2
     p = 1 - alpha / ( 2 * (n-i+1) )
@@ -12,25 +11,38 @@ def esd_critical(alpha, n, i):
     ret = (t_ppr * (n-i)) / np.sqrt( (n - i - 1 + t_ppr**2) * (n-i+1) )
     return(ret)
 
-def getOutliers(fracs,i,r):
+def esd_critical(alpha, n, i):
+    df = n - i - 2
+    p = 1 - alpha / ( 2 * (n-i+1) )
+    t_ppr = t.ppf(p, df)
+    ret = (t_ppr * (n-i)) / np.sqrt( (n - i - 1 + t_ppr**2) * (n-i+1) )
+    return(ret)
+
+#
+def getOutliers(fracs):
     '''
-    Calculate outlying fractions with an ESD test.
-    fracs is a numpy array containing fraction values to be searched for outliers.
-    i is a list of the regions in order of appearance in fracs. r is the number of
-    values to remove (i.e. outliers to consider)
+    Calculate outlying fractions with an ESD test until the first
+    10 values have been removed (i.e. will not form more than 10 edges)
+    fracs is a dict in the form of { window = (fraction,count) }
     '''
     # Start by collecting all fractions
-    n = len(fracs)
+    y = []
+    ks = []
+    for k,v in fracs.items():
+        ks.append(k)
+        y.append(v[0])
+
+#    ks = list(fracs.keys())
+    n = len(y)
     alpha = 0.000000000001
     tokeep = None
-    y = fracs
-    y2 = y
-    ks = np.array(i)
+    y2 = np.array(y)
+    ks = np.array(ks)
     outl = {} # dict to collect output
 
-    ## Compute test statistic until r values have been
+    ## Compute test statistic until r=10 values have been
     ## removed from the sample.
-    for i in range(1, r):
+    for i in range(1, 10):
         if np.std(y2) == 0:
             break
 
@@ -50,9 +62,11 @@ def getOutliers(fracs,i,r):
         val2 = sorted(val1,reverse=True)[tokeep-1]
         index = np.where(val1 >= val2)
         index = index[0].tolist()
+        n = 0
 
-        # Go back to original array and collect values of interest
+        # Go back to original dict and collect values of interest
         for ind in index:
-            outl[ ks[ind] ] = fracs[ind]
+            outl[ ks[ind] ] = fracs[ks[ind]]
+            n += 1
 
     return outl
