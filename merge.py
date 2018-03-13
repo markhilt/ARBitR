@@ -16,8 +16,6 @@ import calcESD as esd
 parser = argparse.ArgumentParser(description="Reads a bam file, creates links between contigs based on linked read information, and outputs a .gfa.")
 parser.add_argument("input_bam", help="Input bam file. Required.", type = str)
 parser.add_argument("-i", "--input_fasta", help="Input fasta file for contig merging. Optional. If not specified, will only output linkage .gfa and .gv for manual merging.", type = str)
-#parser.add_argument("-c","--cm", help="Input previously generated comparison matrix file. Optional - will override input_bam.", type = str)
-#parser.add_argument("-g","--gfa", help="GFA header created by compareGEMs.", type = str)
 parser.add_argument("-s","--region_size", help="Size of region of contig start and end to collect barcodes from. [20000]", default = 20000, type = int)
 parser.add_argument("-n","--barcode_number", help="Minimum number of shared barcodes to create link. [1]", default = 1, type = int)
 parser.add_argument("-f","--barcode_fraction", help="Minimum fraction of shared barcodes to create link. [0.01]", default = 0.01, type = float)
@@ -92,124 +90,113 @@ def trimFasta(contig_side_to_trim):
 
     return (coords_to_trim)
 
-'''
-# Given a region in the format tigXXXs or tigXXXe,
-# returns a node connected to starting region,
-# if this node has no other edges
-def findLink(region):
-    for a in edges_list:
-        if a[0] == region and a[1] not in duplicates:
-            return a[1]
-        elif a[1] == region and a[0] not in duplicates:
-            return a[0]
-    return None
-
-# Given a node with only one edge, returns all linked nodes to this one
-def create_linked_contig(starting_region):
-    tig = starting_region[:-1]
-    side = starting_region[-1]
-    if side == "e":
-        orientation = "f"
+def opposite(node):
+    '''
+    Finds and returns the opposite end of a given node of format tigs, tige or tigu
+    '''
+    tig = node[:-1]
+    side = node[-1]
+    if side == "s":
+        opposite = "e"
+    elif side == "e":
+        opposite = "s"
     else:
-        orientation = "r"
-
-    links = [ "".join([tig,orientation]) ]
-    i = findLink(starting_region)
-
-    # Break if either 0 edges or more than one edge
-    while i != None:
-        tig = i[:-1]
-        side = i[-1]
-        if side == "s":
-            orientation = "f"
-            opposite = "e"
-        else:
-            orientation = "r"
-            opposite = "s"
-
-        links.append( "".join([tig,orientation]) )
-
-        # Look at opposite side of current node for unqiue edges
-        next_edge = "".join([tig,opposite])
-
-        if next_edge not in duplicates:
-            i = findLink(next_edge)
-        else:
-            i = None
-    return links
-
-'''
+        opposite = "u"
+    opposite_end = "".join([tig,opposite])
+    return opposite_end
 
 def findStartingNode(graph):
     '''
     ##### Find starting node #####
-    A starting node is defined as having:
-    1. A single edge to another node, which also only
-    connects back to the starting node.
-    2. The opposite end of the starting node either has:
-    (a) no edges
-    (b) 2 edges
-    (c) 3 edges, to 3 different nodes
-    (d) more than 3 edges
-    If it has 3 edges of which 2 are to the same node (in different ends), it
-    might be possible to determine a path (depending on edges on the 3 connected nodes)
+    Finding a good place to start a new contig is surprisingly challenging.
+    For every given node, one must consider the number of edges from this node,
+    the number of edges from every connected node,
+    and the number of edges from the opposite side of the given node.
+    There are a total of 5 different scenarios considered here.
+    1.  Starting node has a single edge. Connected node has two edges, one back and one to
+        the opposite end of starting node. Opposite end has only this edge.
+    The rest of the scenarios have either no edges, one edge, two different, three different, or
+    more than three edges at the opposite end. If one egde, this needs to be connected to a node
+    with several connections.
+    2.  Starting node has a single edge. Connected node has also only one (the same).
+    3.  Starting node has two edges to the same node. Both connections only have edges back
+        to the starting node.
+    4.  Starting node has two edges to the same node. Both connections have two edges;
+        one back and one to a new, third node. This third node has two connections, back
+        to the middle node.
+    5.  Starting node has three edges, two to the same node and one to a third node.
+        Both connections of the middle node have two edges each, back to the starting
+        and forward to the third node. Third node has three connections, back
+        to both sides of the middle node and one to the starting node.
 
-    "graph" is the graph in a dict format
+    "graph" is the graph in a dict format, and every node which has an edge should be
+    represented in the keys
     '''
-    counter = 0
+    linked_contig_ends = []
+    # Go through every node
     for node in graph:
-        # First check that there is only one edge, and connecting node has
-        # only one (the same) edge
-        # Special case if there are three edges: then check that find3way does
-        # not return None
-        if ( len(findLink(node)) == 1 \
-        and len(findLink(findLink(node)[0])) == 1 ) \
-        or ( len(findLink(node)) == 3 \
-        and find3way(node,findLink(node)) != None ):
-            # If we got to here, we have a candidate starting node with good edges
-            # Now check if opposite end of current node has 1 edge, whose node has 1 edge,
-            # or the special case above again, we are in the middle of a region to merge
-            # If so, continue
-            itig = node[:-1]
-            iside = node[-1]
-            if iside == "s":
-                iopposite = "e"
-            else:
-                iopposite = "s"
 
-            opposite_end = "".join([itig,iopposite])
+        # Collect edge(s) to current node
+        conn = graph[node]
 
-            # Condition (a), (b), (d)
-            if len(findLink(opposite_end)) != 1 \
-            and len(findLink(opposite_end)) != 3:
-                # Starting node found!
-                if node[:-1] in done_edges:
+        # Collect opposite end of this node
+        op = opposite(node)
+
+        # And edge(s) to opposite end
+        op_edge = findLink(op)
+
+        # Check for 1
+        if len(conn) == 1 \
+        and conn == op_edge \
+        and len(op_edge) == 1 \
+        and len(findLink(conn[0])) == 2 \
+        and findLink(conn[0])[0][:-1] == findLink(conn[0])[0][:-1]:
+            node = node[:-1] + "u"
+            linked_contig_ends.append(node)
+            continue
+
+        # Other scenarios all have shared qualities of opposite end, see above
+        if len(op_edge) == 0 \
+        or (len(op_edge) == 1 \
+        and len(findLink(op_edge[0])) > 1) \
+        or ( len(op_edge) == 2 \
+        and op_edge[0][:-1] != op_edge[1][:-1] )\
+        or ( len(op_edge) == 3 \
+        and op_edge[0][:-1] != op_edge[1][:-1] \
+        and op_edge[1][:-1] != op_edge[2][:-1] \
+        and op_edge[0][:-1] != op_edge[2][:-1])\
+        or len(op_edge) > 3:
+
+            # Check for 2
+            if len(conn) == 1 \
+            and len(graph[conn[0]]) == 1:
+                linked_contig_ends.append(node)
+                continue
+
+            # Check for 3,4
+            if len(conn) == 2 \
+            and conn[0][:-1] == conn[1][:-1]:
+
+                # Check for 3
+                if len(graph[conn[0]]) == 1 \
+                and len(graph[conn[1]]) == 1:
+                    linked_contig_ends.append(node)
                     continue
 
-                linked_tig_ID = "linked_contig_"+str(counter)
-                linked_contig = create_linked_contig(node)
-                print("Starting node: "+node)
-                done_edges.append(linked_contig[-1][:-1])
-                linked_contigs[linked_tig_ID] = linked_contig
-                counter += 1
-
-            # If opposite end has 3 edges,
-            # check if they are to 3 different nodes,
-            # or if two are to the different sides of the same
-            # node, i.e. condition (c)
-            elif len(findLink(opposite_end)) == 3 \
-            and find3way(opposite_end,findLink(opposite_end)) != None:
-                # Starting node found!
-                if node[:-1] in done_edges:
+                # Check for 4
+                if len(graph[conn[0]]) == 2 \
+                and len(graph[conn[1]]) == 2 \
+                and sorted(graph[conn[0]]) == sorted(graph[conn[1]]):
+                    linked_contig_ends.append(node)
                     continue
 
-                linked_tig_ID = "linked_contig_"+str(counter)
-                linked_contig = create_linked_contig(node)
-                print("Starting node: "+node)
-                done_edges.append(linked_contig[-1][:-1])
-                linked_contigs[linked_tig_ID] = linked_contig
-                counter += 1
+            # Check for 5
+            threew = find3way(node, conn)
+            if len(conn) == 3 \
+            and threew != None:
+                linked_contig_ends.append(node)
 
+    return linked_contig_ends
 
 def findLink(region):
     '''
@@ -284,33 +271,49 @@ def find3way(starting_node,list_of_edges):
 
 def create_linked_contig(starting_region):
     '''
-    Given a node with only one edge, returns all linked nodes to this one
+    Links together contigs from the starting_region
     '''
     tig = starting_region[:-1]
     side = starting_region[-1]
+    i = findLink(starting_region)
+
     if side == "e":
         orientation = "f"
     elif side == "s":
         orientation = "r"
     else:
         orientation = "u"
+        i = findLink(tig+"e")
 
     links = [ "".join([tig,orientation]) ]
-    i = findLink(starting_region)
+
     if len(i) == 1:
-        i = i[0]
+        t = i[0]
+
+    elif len(i) == 2 \
+    and i[0][:-1] == i[1][:-1]:
+        links.append( "".join([i[0][:-1],"u"]) ) # Direction of middle node is unknown
+        it = findLink(i[0])
+        if len(it) == 1:
+            t = None
+        elif len(it) == 2:
+            print(it)
+            it.remove(starting_region)
+            print(it,starting_region)
+            t = it[0]
+
     elif len(i) == 3:
         s = find3way(starting_region, i)
         if s != None:
             same, diff = s[0], s[1]
             links.append( "".join([same,"u"]) ) # Direction of middle node is unknown
-            i = diff
+            t = diff
         else:
-            i = None
+            t = None
 
-    while i != None:
-        tig = i[:-1]
-        side = i[-1]
+    while t != None:
+        tig = t[:-1]
+        side = t[-1]
         if side == "s":
             orientation = "f"
             opposite = "e"
@@ -329,7 +332,20 @@ def create_linked_contig(starting_region):
         # If only one matching edge, check that connected node
         # has no other edges
         if len(l) == 1 and len(findLink(l[0])) == 1:
-            i = l[0]
+            t = l[0]
+
+        # If two edges, check if they are to opposite sides
+        # if the same node
+        elif len(l) == 2 and l[0][:-1] == l[1][:-1]:
+            links.append( "".join([t[0][:-1],"u"]) ) # Direction of middle node is unknown
+            t = findLink(i[0])
+            if len(t) == 1:
+                t = None
+            elif len(t) == 2 and l in t:
+                t = t.remove(l)
+                t = t[0]
+            else:
+                t = None
 
         # If 3 edges, there is a chance two of them are to the same
         # node, on opposite sides, and the last to another node
@@ -341,18 +357,12 @@ def create_linked_contig(starting_region):
                 same, diff = s[0], s[1]
                 # Congrats, you have found a hit!
                 links.append( "".join([same,"u"]) ) # Direction of middle node is unknown
-                i = diff
+                t = diff
             else:
-                i = None
-
-        # If there are two edges, and the connect to the same node at opposite ends,
-        # add this node in unknown orientation and break
-        elif len(l) == 2 and l[0][:-1] == l[1][:-1]:
-            links.append( "".join( [l[0][:-1],"u"] ) )
-            i = None
+                t = None
 
         else:
-            i = None
+            t = None
 
     return links
 
@@ -620,25 +630,23 @@ else:
 
     # Reformat unique edges to a dict {"linked_contig_X":[ ("old_contig_1f/r"), ("old_contig_2f/r"), ... ]}
     global linked_contigs
+    global done_edges
     linked_contigs = {}
     done_edges = []
-    all_connected_nodes = []
-    duplicates = []
-    counter = 1 # To keep track of names of new contigs
+    counter = 1
 
-    # Detta är jävligt onödigt
-    for i in edges_list:
-        # Track which nodes have multiple edges
-        if i[0] not in all_connected_nodes:
-            all_connected_nodes.append(i[0])
-        else:
-            duplicates.append(i[0])
-        if i[1] not in all_connected_nodes:
-            all_connected_nodes.append(i[1])
-        else:
-            duplicates.append(i[1])
+    # Time to start linking contigs together based on the linkage graph
+    # First find nodes that will start or end linked contigs
+    linked_contig_ends = findStartingNode(edges)
 
-    findStartingNode(edges)
+    # Then go through these and build one contig between two entries
+    for c in linked_contig_ends:
+        if c[:-1] not in done_edges:
+            linked_tig_ID = "linked_contig_"+str(counter)
+            linked_contig = create_linked_contig(c)
+            done_edges.append(linked_contig[-1][:-1])
+            linked_contigs[linked_tig_ID] = linked_contig
+            counter += 1
 
     for i in linked_contigs:
         print(i,linked_contigs[i])
@@ -813,35 +821,5 @@ else:
             report.write("\n")
 
 print("Done.")
-
-    # Find starting node
-    # This is done by looking for:
-    # (1) node sides with only one edge
-    # (2) connected node has only one edge
-    # (3a) original node has no edge on opposite end
-    # (3b) OR original node has several edges on opposite end
-    # (4) linked contig was not already added in opposite orientation
-    for i in all_connected_nodes:
-        # Check 1, 2 and 4
-        if i in duplicates or findLink(i) == None \
-        or i[:-1] in done_edges:
-            continue
-
-        itig = i[:-1]
-        iside = i[-1]
-        if iside == "s":
-            iopposite = "e"
-        else:
-            iopposite = "s"
-
-        # Check 3
-        if "".join([itig,iopposite]) not in all_connected_nodes \
-        or "".join([itig,iopposite]) in duplicates:
-            # Node with only one edge identified
-            linked_tig_ID = "linked_contig_"+str(counter)
-            linked_contig = create_linked_contig(i)
-            done_edges.append(linked_contig[-1][:-1])
-            linked_contigs[linked_tig_ID] = linked_contig
-            counter += 1
 
 '''
