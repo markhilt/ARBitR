@@ -325,9 +325,9 @@ def create_linked_contig(starting_region):
             opposite = "u"
 
         links.append( "".join([tig,orientation]) )
+
         # Look at opposite side of current node for unqiue edges
         next_edge = "".join([tig,opposite])
-
         l = findLink(next_edge)
         # If only one matching edge, check that connected node
         # has no other edges
@@ -337,13 +337,13 @@ def create_linked_contig(starting_region):
         # If two edges, check if they are to opposite sides
         # if the same node
         elif len(l) == 2 and l[0][:-1] == l[1][:-1]:
-            links.append( "".join([t[0][:-1],"u"]) ) # Direction of middle node is unknown
-            t = findLink(i[0])
-            if len(t) == 1:
-                t = None
-            elif len(t) == 2 and l in t:
-                t = t.remove(l)
-                t = t[0]
+            links.append( "".join([l[0][:-1],"u"]) ) # Direction of middle node is unknown
+            middle_edges1 = findLink(l[0])
+            middle_edges2 = findLink(l[1])
+            if middle_edges1 == middle_edges2 \
+            and len(middle_edges1) == 2 and next_edge in middle_edges1:
+                middle_edges1.remove(next_edge)
+                t = middle_edges1[0]
             else:
                 t = None
 
@@ -352,7 +352,7 @@ def create_linked_contig(starting_region):
         # This means that the one where both ends are connected
         # belongs in between.
         elif len(l) == 3:
-            s = find3way(i,l)
+            s = find3way(t,l)
             if s != None:
                 same, diff = s[0], s[1]
                 # Congrats, you have found a hit!
@@ -644,6 +644,7 @@ else:
         if c[:-1] not in done_edges:
             linked_tig_ID = "linked_contig_"+str(counter)
             linked_contig = create_linked_contig(c)
+            done_edges.append(linked_contig[0][:-1])
             done_edges.append(linked_contig[-1][:-1])
             linked_contigs[linked_tig_ID] = linked_contig
             counter += 1
