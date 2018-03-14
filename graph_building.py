@@ -40,6 +40,7 @@ def findStartingNode(graph):
     "graph" is the graph in a dict format, and every node which has an edge should be
     represented in the keys
     '''
+
     linked_contig_ends = []
     # Go through every node
     for node in graph:
@@ -271,3 +272,15 @@ def create_linked_contig(starting_region):
             t = None
 
     return links
+
+def edges_as_list(graph):
+    '''
+    Converts a graph in dict format to a list of tuples of every edge
+    '''
+    global edges_list
+    edges_list = []
+    for i in graph:
+        for a in graph[i]:
+            # If edge was not already added in the opposite direction, add it
+            if ( (a,i) ) not in edges_list:
+                edges_list.append( (i, a) )

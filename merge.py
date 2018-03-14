@@ -12,6 +12,7 @@ from scipy.stats import t
 import formatting_tools as ft
 import calcESD as esd
 import graph_building as gb
+import nuclseqTools as nT
 
 parser = argparse.ArgumentParser(description="Reads a bam file, creates links between contigs based on linked read information, and outputs a .gfa.")
 parser.add_argument("input_bam", help="Input bam file. Required.", type = str)
@@ -54,12 +55,12 @@ def countReads(contig,coords_to_check):
     cov = sum([sum(cov_arr[x]) for x in range(0,4,1)]) / 50
     return cov
 
-
 def trimFasta(contig_side_to_trim):
     '''
     Given a fasta entry with side to trim, returns new start and end coordinates
+    Input format: "tigs" or "tige"
     '''
-    # Input format: "tig-side"
+
     tig = contig_side_to_trim[:-1]
     side = contig_side_to_trim[-1]
     coords_at_a_time = 50
@@ -89,56 +90,6 @@ def trimFasta(contig_side_to_trim):
                     coords_to_check = [x-coords_at_a_time for x in coords_to_check] # And move to next 10 coordinates
 
     return (coords_to_trim)
-
-def reverse_complement(nuclstring):
-    rev_comped = ""
-    for l in reversed(nuclstring):
-        if l == "A" or l == "a":
-            rev_comped += "T"
-        elif l == "T" or l == "t":
-            rev_comped += "A"
-        elif l == "C" or l == "c":
-            rev_comped += "G"
-        elif l == "G" or l == "g":
-            rev_comped += "C"
-        elif l == "N" or l == "n":
-            rev_comped += "N"
-    return rev_comped
-
-def createConsensus(delta,string1,string2):
-    '''
-    Given two overlapping nucleotide strings (excluding overhangs) and alignment information,
-    returns the merged sequence
-    delta = [int,int,int, ...]
-    strings = "ATCG"
-    '''
-    new_string1 = string1
-    new_string2 = string2
-    start = 0
-    for i in delta:
-        if i > 0:
-            start += i
-            new_string2 = new_string2[:start-1] + "." + new_string2[start-1:]
-
-        else:
-            i = -i
-            start += i
-            new_string1 = new_string1[:start-1] + "." + new_string1[start-1:]
-
-    # Write the new string. Insertions are favoured over deletions.
-    # N's are put at mismatches
-    cons = ""
-    for i in range(0,len(new_string1),1):
-        if new_string1[i] == new_string2[i]:
-            cons += new_string1[i]
-        elif new_string1[i] == ".":
-            cons += new_string2[i]
-        elif new_string2[i] == ".":
-            cons += new_string1[i]
-        else:
-            cons += "N"
-
-    return cons
 
 samfile = pysam.AlignmentFile(args.input_bam, "rb")
 contig_list = samfile.references
@@ -344,15 +295,10 @@ else:
     samfile = pysam.AlignmentFile(args.input_bam, "rb")
     print("Found fasta file for merging: {0}".format(args.input_fasta))
 
-    # Testing reformatting of edges from dict to list of tuples
-    edges_list = []
-    for i in edges:
-        for a in edges[i]:
-            # If edge was not already added in the opposite direction, add it
-            if ( (a,i) ) not in edges_list:
-                edges_list.append( (i, a) )
+    # Reformat edges from dict to list of tuples
+    gb.edges_as_list(edges)
 
-    # Reformat unique edges to a dict {"linked_contig_X":[ ("old_contig_1f/r"), ("old_contig_2f/r"), ... ]}
+    # Build linked contigs in a dict {"linked_contig_X":[ ("old_contig_1f/r"), ("old_contig_2f/r"), ... ]}
     global linked_contigs
     global done_edges
     linked_contigs = {}
@@ -373,11 +319,7 @@ else:
             linked_contigs[linked_tig_ID] = linked_contig
             counter += 1
 
-    for i in linked_contigs:
-        print(i,linked_contigs[i])
-        '''
     # Next trim fasta sequences to be merged in low coverage regions
-
     # trimmed_fasta_coords is a dict with coords to keep from original fasta
     # Format: {contig: [start_coord, end_coord]}
     # Start by filling with old coords, which will then be changed
@@ -391,11 +333,13 @@ else:
         for i in edge:
             tig = i[:-1]
             # Trim only sides where links are formed
+            # If direction of node is unknown (last character in string == "u"),
+            # trim both sides
             # If first connected node, trim last coordinate
-            if i == edge[0]:
+            if i == edge[0] and i[-1] != "u":
                 trimmed_fasta_coords[tig] = [trimmed_fasta_coords[tig][0], trimmed_fasta_coords[tig][1] + trimFasta(tig+"e")]
             # If last connected node, trim first coordinate
-            elif i == edge[-1]:
+            elif i == edge[-1] and i[-1] != "u":
                 trimmed_fasta_coords[tig] = [trimmed_fasta_coords[tig][0] + trimFasta(tig+"s"), trimmed_fasta_coords[tig][1]]
             # If node is connected at both sides, trim both
             else:
@@ -414,7 +358,7 @@ else:
         tig_counter = 0 # To keep track of where in the linked contig list we are
         tig_started = False # To check if merged contig was initiated
 
-        # List of nucleotide strings to merge.
+        # newseq is a List of nucleotide strings to merge.
         # Format: [contig1_left_overhang, contig1-contig2_aligned_consensus, contig2_right_overhang ...]
         newseq = []
         for t in linked_contigs[linked_tig]:
@@ -427,7 +371,7 @@ else:
                 ref_fasta = fastafile.fetch(reference=refname, start=trimmed_fasta_coords[refname][0], end=trimmed_fasta_coords[refname][1])
                 # Reverse complement if necessary
                 if refdirection == "r":
-                    ref_fasta = reverse_complement(ref_fasta)
+                    ref_fasta = nT.reverse_complement(ref_fasta)
 
             # If tig_started == True, i.e. this is the second or more run through the loop,
             # there is already a starting point, i.e. newseq.
@@ -449,7 +393,7 @@ else:
 
             # Reverse complement if necessary
             if querydirection == "r":
-                query_fasta = reverse_complement(query_fasta)
+                query_fasta = nT.reverse_complement(query_fasta)
 
             # Write trimmed contigs to temp files for mummer alignment in working directory
             with open("ref.fa","w",encoding = "utf-8") as fastaout:
@@ -504,7 +448,7 @@ else:
                     alqueryseq = query_fasta[alignment_query[0]:alignment_query[1]]
 
                     # Add "consensus" of aligned sequence to new contig
-                    newseq.append(createConsensus(d,alrefseq,alqueryseq))
+                    newseq.append(nT.createConsensus(d,alrefseq,alqueryseq))
                     # And then assign the remainder of query contig as new reference
                     newref = query_fasta[alignment_query[1]:]
 
