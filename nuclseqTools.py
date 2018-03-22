@@ -24,10 +24,12 @@ def createConsensus(delta,string1,string2):
     new_string2 = string2
     start = 0
     for i in delta:
+        # Positive integers in the delta mean gaps in the query sequence, insert these
         if i > 0:
             start += i
             new_string2 = new_string2[:start-1] + "." + new_string2[start-1:]
 
+        # Negative integers in the delta mean gaps in the reference sequence, insert these
         else:
             i = -i
             start += i
