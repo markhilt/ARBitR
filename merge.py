@@ -27,10 +27,10 @@ parser.add_argument("-q","--mapq", help="Mapping quality cutoff value. [60]", de
 parser.add_argument("-o","--output", help="Prefix for output files.", type = str)
 args = parser.parse_args()
 
-#### Functions
-
-# Given reads from samfile, return GEM barcodes aligned to this region in a set
 def getGEMs(reads):
+    '''
+    Given reads from samfile, return GEM barcodes aligned to this region in a set
+    '''
     BC_list = []
     for read in reads:
         if read.has_tag('BX') == True and read.mapping_quality >= args.mapq:
@@ -39,8 +39,10 @@ def getGEMs(reads):
     BC_list = set(BC_list)
     return BC_list
 
-# To split up the contig into windows
 def getWindows(contig):
+    '''
+    To split up the contig into windows
+    '''
     length = contig_dict[contig]
     start = (0,args.region_size)
 
@@ -52,8 +54,10 @@ def getWindows(contig):
     end = (endstart,length)
     return [start,end]
 
-# To count the number of reads aligned to a region
 def countReads(contig,coords_to_check):
+    '''
+    To count the number of reads aligned to a region
+    '''
     cov_arr = samfile.count_coverage(contig, coords_to_check[0],coords_to_check[1])
     cov = sum([sum(cov_arr[x]) for x in range(0,4,1)]) / 50
     return cov
@@ -322,14 +326,6 @@ else:
             linked_contigs[linked_tig_ID] = linked_contig
             counter += 1
 
-    print("Writing report to {0}.report".format(outfilename))
-    with open(outfilename+".report","w",encoding = "utf-8") as report:
-        for i in linked_contigs:
-            report.write(i)
-            for j in linked_contigs[i]:
-                report.write("\t"+j)
-            report.write("\n")
-
     # Next trim fasta sequences to be merged in low coverage regions
     # trimmed_fasta_coords is a dict with coords to keep from original fasta
     # Format: {contig: [start_coord, end_coord]}
@@ -356,35 +352,139 @@ else:
             else:
                 trimmed_fasta_coords[tig] = [trimmed_fasta_coords[tig][0] + trimFasta(tig+"s"), trimmed_fasta_coords[tig][1] + trimFasta(tig+"e")]
 
+    # Before merging can begin, the direction of any contigs of unknown
+    # orientation needs to be determined. If the direction cannot be determined,
+    # the linked contig is broken.
+    print("\nFinding orientation of unknown contigs...")
+    linked_contigs_oriented = {} # This dict will be filled with the oriented contigs
+    for linked_tig,tig_list in linked_contigs.items():
+        tig_counter = 0 # To keep track of position in tig_list
+        c = 0 # Count new linked contigs formed by breaking earlier ones
+        new_tig_list = [] # This list will be filled with the oriented contigs
+        new_linked_tig_ID = ".".join([linked_tig,str(c)])
+        for t in tig_list:
+            tig = t[:-1]
+            orientation = t[-1]
+            # If orientation is not "u", add entries as before
+            if orientation != "u":
+                new_tig_list.append(t)
+            else:
+                # If orientation is unknown, use mummerTools module to find it
+                # The contig to compare to depends on where in the linked contig we are
+                # If at the first contig to be linked, compare to the second
+                if t == tig_list[0]:
+                    ref_fasta = fastafile.fetch(reference=tig, start=trimmed_fasta_coords[tig][0], end=trimmed_fasta_coords[tig][1])
+                    ctig = tig_list[1][:-1]
+                    corientation = tig_list[1][-1]
+                    query_fasta = fastafile.fetch(reference=ctig, start=trimmed_fasta_coords[ctig][0], end=trimmed_fasta_coords[ctig][1])
+                    if corientation == "r":
+                        query_fasta = nt.reverse_complement(query_fasta)
+                    delta, reflen, querylen = mt.align(ref_fasta,query_fasta)
+                    alignment,dir = mt.findDirectionRef(delta, reflen, querylen)
+                    if dir != None:
+                        tig_ori = tig+dir
+                        new_tig_list.append(tig_ori)
+
+                    # If direction still cannot be determined, continue iterating through tig_list
+                    else:
+                        continue
+
+                # If anywhere else, compare to the surrounding contigs
+                else:
+                    # First the previous contig
+                    ctig = tig_list[tig_counter-1][:-1]
+                    corientation = tig_list[tig_counter-1][-1]
+                    ref_fasta = fastafile.fetch(reference=ctig, start=trimmed_fasta_coords[ctig][0], end=trimmed_fasta_coords[ctig][1])
+                    if corientation == "r":
+                        ref_fasta = nt.reverse_complement(ref_fasta)
+                    query_fasta = fastafile.fetch(reference=tig, start=trimmed_fasta_coords[tig][0], end=trimmed_fasta_coords[tig][1])
+                    delta, reflen, querylen = mt.align(ref_fasta,query_fasta)
+                    alignment,dir = mt.findDirectionQuery(delta, reflen, querylen)
+                    if dir != None:
+                        tig_ori = tig+dir
+                        new_tig_list.append(tig_ori)
+
+                    # If direction still cannot be determined, and at the last element in the tig_list,
+                    # just continue without adding the last element
+                    elif t == tig_list[-1]:
+                        continue
+
+                    # If direction cannot be determined from the previous contig, instead try the next one,
+                    # if not already at the end of the tig_list
+                    else:
+                        ref_fasta = fastafile.fetch(reference=tig, start=trimmed_fasta_coords[tig][0], end=trimmed_fasta_coords[tig][1])
+                        ctig = tig_list[tig_counter+1][:-1]
+                        corientation = tig_list[tig_counter+1][-1]
+                        query_fasta = fastafile.fetch(reference=ctig, start=trimmed_fasta_coords[ctig][0], end=trimmed_fasta_coords[ctig][1])
+                        if corientation == "r":
+                            query_fasta = nt.reverse_complement(query_fasta)
+                        delta, reflen, querylen = mt.align(ref_fasta,query_fasta)
+                        alignment,dir = mt.findDirectionRef(delta, reflen, querylen)
+                        if dir != None:
+                            tig_ori = tig+dir
+                            new_tig_list.append(tig_ori)
+
+                        # If dir == None, break the linked contig
+                        # If there is anything in new_tig_list, add it to the new dict
+                        else:
+                            if len(new_tig_list) > 1:
+                                linked_contigs_oriented[new_linked_tig_ID] = new_tig_list
+                                c += 1
+                                new_linked_tig_ID = ".".join([linked_tig,str(c)])
+                                new_tig_list = []
+            tig_counter += 1
+        # After finishing iteration through each tig_list, and
+        # there is anything in new_tig_list, add it to the new dict
+        if len(new_tig_list) > 1:
+            linked_contigs_oriented[new_linked_tig_ID] = new_tig_list
+            c += 1
+
+    print("Writing pre-oriented report to {0}.preor.report".format(outfilename))
+    with open(outfilename+".preor.report","w",encoding = "utf-8") as report:
+        for i in linked_contigs:
+            report.write(i)
+            for j in linked_contigs[i]:
+                report.write("\t"+j)
+            report.write("\n")
+
+    print("Writing report to {0}.report".format(outfilename))
+    with open(outfilename+".report","w",encoding = "utf-8") as report:
+        for i in linked_contigs_oriented:
+            report.write(i)
+            for j in linked_contigs_oriented[i]:
+                report.write("\t"+j)
+            report.write("\n")
+
+    # For the contigs that were now directed, find new trim coordinates if they are at the beginning
+    # or the end of the linked contig
+    # TODO
+
     # Then walk through the linked_contigs dict, gradually building each contig from left to right.
     # Sequences to be merged are saved in merged_seqs in the format
     # {new_linked_contig_ID: "ATCG..." }
     merged_seqs = {}
-    unaligned_linked_contigs = {} # Collect linked contigs where no alignment was found
     contigs_to_exclude = [] # Collect contigs that were merged into new linked contigs
     print("Building linked contigs.")
-    for linked_tig in linked_contigs:
-        # Go through every linked contig in the list up until the next to last;
-        # at this step the last contig will be merged into the sequence
+
+    for linked_tig_ID,tig_list in linked_contigs_oriented.items():
+        # Go through every linked contig in the dict to align and merge the sequences
+        # contained in the values
         tig_counter = 0 # To keep track of where in the linked contig list we are
-        tig_started = False # To check if merged contig was initiated
 
         # newseq is a List of nucleotide strings to merge.
         # This is the most important variable for the rest of this script
         # Format: [contig1_left_overhang, contig1-contig2_aligned_consensus, contig2_right_overhang ...]
         newseq = []
-        for t in linked_contigs[linked_tig]:
-            # If at the last contig in the list, just append it to newseq and then break
-            if tig_counter == len(linked_contigs[linked_tig]) - 1:
-                newseq.append(newref)
-                break
+        starting_tig = None
+        for next_tig in tig_list:
+            # Exclude the tig that is being added, so it's not included in the final fasta
+            contigs_to_exclude.append(next_tig[:-1])
 
             # If starting_tig was not created before, i.e. if starting from the first contig,
             # assign these variables
-            if tig_started == False:
-                tig_started = True
+            if starting_tig == None:
                 # Collect first contig
-                starting_tig = linked_contigs[linked_tig][0]
+                starting_tig = next_tig
                 # Collect name and direction of first contig
                 refname, refdirection = starting_tig[:-1], starting_tig[-1]
                 # And sequence
@@ -393,18 +493,14 @@ else:
                 if refdirection == "r":
                     ref_fasta = nt.reverse_complement(ref_fasta)
 
-                newref = ref_fasta
-
             # If tig_started == True, i.e. this is the second or more run through the loop,
             # there is already a starting point, i.e. newref.
             # Keep aligning and merging linked contigs to this one.
             # Reference is then the last contig visited in the iteration and query the current
             else:
-                ref_fasta = newref # last entry of previous iteration
-                #refdirection = ""
+                # This path is taken when two sequences are to be aligned
 
                 # Collect next tig to be merged into the linked contig
-                next_tig = linked_contigs[linked_tig][tig_counter+1]
                 queryname, querydirection = next_tig[:-1], next_tig[-1]
                 query_fasta = fastafile.fetch(reference=queryname, start=trimmed_fasta_coords[queryname][0], end=trimmed_fasta_coords[queryname][1])
 
@@ -412,39 +508,10 @@ else:
                 if querydirection == "r":
                     query_fasta = nt.reverse_complement(query_fasta)
 
-                # Give trimmed contigs to mummer to align. Mummer is currently wrapped
+                # Give trimmed contig sequences to mummer to align. Mummer is currently wrapped
                 # in the mummerTools module
                 delta, reflen, querylen = mt.align(ref_fasta,query_fasta)
-
-                # To deal with contigs in unknown direction "u"
-                # dir collects the direction, if unknown, else gets assigned "n"
-                # If any of them should be in reverse orientation, revcomp and redo
-                # the alignment
-                if refdirection == "u":
-                    alignment,dir = mt.findDirectionRef(delta, reflen, querylen)
-                    if alignment != None:
-                        if dir == "r":
-                            ref_fasta = nt.reverse_complement(ref_fasta)
-                            delta, reflen, querylen = mt.align(ref_fasta,query_fasta)
-                            alignment = mt.findAlignment(delta, reflen)
-                    else:
-                        # Direction cannot be determined. Go to next contig in
-                        # the list
-                        continue
-
-                elif querydirection == "u":
-                    alignment,dir = mt.findDirectionQuery(delta, reflen, querylen)
-                    if alignment != None:
-                        if dir == "r":
-                            query_fasta = nt.reverse_complement(query_fasta)
-                            delta, reflen, querylen = mt.align(ref_fasta,query_fasta)
-                            alignment = mt.findAlignment(delta, reflen)
-                    else:
-                        # Direction cannot be determined. Go to next contig in
-                        # the list
-                        continue
-                else:
-                    alignment = mt.findAlignment(delta, reflen)
+                alignment = mt.findAlignment(delta, reflen)
 
                 # If the expected alignment was found, append sequences to newseq
                 if alignment != None:
@@ -465,28 +532,24 @@ else:
                     alignment_ints = alignment[1:] # First entry in alignment is the header containing coordinates
                     newseq.append(nt.createConsensus(alignment_ints,alrefseq,alqueryseq))
                     # And then assign the remainder of query contig as new reference
-                    newref = query_fasta[query_coords[1]:]
+                    ref_fasta = query_fasta[query_coords[1]:]
 
                 # If the correct alignment was not found, instead scaffold by inserting 10*N:
                 else:
                     newseq.append(ref_fasta)
                     newseq.append("NNNNNNNNNN")
-                    newref = query_fasta
+                    ref_fasta = query_fasta
 
-                # Exclude the tigs that were just added to newseq,
-                # so that they are not written into the new fasta
-                if refname not in contigs_to_exclude:
-                    contigs_to_exclude.append(refname)
-                contigs_to_exclude.append(queryname)
+                if next_tig == tig_list[-1]:
+                    # When at the last element in tig_list, there is nothing left to align.
+                    # Merge newseq and add to the merged_seqs dict
+                    newseq.append(ref_fasta)
+                    merged_seqs[linked_tig_ID] = "".join(newseq)
 
-                # Go to next contig in the list
-                tig_counter += 1
+            # Go to next contig in the list
+            tig_counter += 1
 
-        # After iterating through every element in linked_contigs[linked_tig][:-1],
-        # merge newseq and add to the merged_seqs dict
-        merged_seqs[linked_tig] = "".join(newseq)
-
-    print("Writing merged fasta to {0}.fasta".format(outfilename))
+    print("\nWriting merged fasta to {0}.fasta".format(outfilename))
     with open(outfilename+".fasta","w",encoding = "utf-8") as fastaout:
         for i in merged_seqs:
             fastaout.write(">"+i+"\n")

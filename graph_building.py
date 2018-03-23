@@ -1,3 +1,6 @@
+import mummerTools as mt
+import nuclseqTools as nt
+
 def opposite(node):
     '''
     Finds and returns the opposite end of a given node of format tigs, tige or tigu
@@ -180,7 +183,7 @@ def find3way(starting_node,list_of_edges):
 
 def create_linked_contig(starting_region):
     '''
-    Links together contigs from the starting_region
+    Links together contigs from the starting_region.
     '''
     tig = starting_region[:-1]
     side = starting_region[-1]
@@ -192,16 +195,44 @@ def create_linked_contig(starting_region):
         orientation = "r"
     else:
         orientation = "u"
-        i = findLink(tig+"e")
+        # If orientation of starting_region is unknown, use the mummerTools module to attempt to
+        # find it.
+        i = findLink(tig+"e") # Collect link. Both ends are connected to the same node so "e" is arbitrarily chosen
+        #iseq = i[:-1]
+        #idir = i[-1]
+        #if idir == "r":
+        #    iseq = nt.reverse_complement(iseq)
 
-    links = [ "".join([tig,orientation]) ]
+        # Collect sequences
+        #ref_fasta = fastafile.fetch(reference=tig, start=trimmed_fasta_coords[tig][0], end=trimmed_fasta_coords[tig][1])
+        #query_fasta = fastafile.fetch(reference=iseq, start=trimmed_fasta_coords[iseq][0], end=trimmed_fasta_coords[iseq][1])
 
+        # Align
+        #delta, reflen, querylen = mt.align(ref_fasta,query_fasta)
+        #alignment, orientation = mt.findDirectionRef(delta, reflen, querylen)
+
+    if orientation != None:
+        # IF direction is still unknown, i.e. no good alignment was found,
+        # don't add it into the [links]
+        links = [ "".join([tig,orientation]) ]
+
+    # If there is only one link, all is good
     if len(i) == 1:
         t = i[0]
 
+    # Two links to the same node means mummerTools module must be used again
+    # to determine direction
     elif len(i) == 2 \
     and i[0][:-1] == i[1][:-1]:
-        links.append( "".join([i[0][:-1],"u"]) ) # Direction of middle node is unknown
+        #iseq = i[:-1]
+        #idir = i[-1]
+        #ref_fasta = fastafile.fetch(reference=tig, start=trimmed_fasta_coords[tig][0], end=trimmed_fasta_coords[tig][1])
+        #query_fasta = fastafile.fetch(reference=iseq, start=trimmed_fasta_coords[iseq][0], end=trimmed_fasta_coords[iseq][1])
+        #delta, reflen, querylen = mt.align(ref_fasta,query_fasta)
+        #alignment, orientation = mt.findDirectionQuery(delta, reflen, querylen)
+
+        if orientation != None:
+            links.append( "".join([i[0][:-1],orientation]) )
         it = findLink(i[0])
         if len(it) == 1:
             t = None

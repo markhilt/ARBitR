@@ -100,3 +100,5 @@ def formatTSV(dict1, l):
             tsvlist.append("500\t{0}{1}\t{2}{3}\t{4}\t{5}\n".format(direction,contig,ldirection,ltig,bcnum,bcnum*10) )
 
     return tsvlist
+
+#def formatBed()
