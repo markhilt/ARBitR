@@ -11,33 +11,19 @@ def esd_critical(alpha, n, i):
     ret = (t_ppr * (n-i)) / np.sqrt( (n - i - 1 + t_ppr**2) * (n-i+1) )
     return(ret)
 
-def esd_critical(alpha, n, i):
-    df = n - i - 2
-    p = 1 - alpha / ( 2 * (n-i+1) )
-    t_ppr = t.ppf(p, df)
-    ret = (t_ppr * (n-i)) / np.sqrt( (n - i - 1 + t_ppr**2) * (n-i+1) )
-    return(ret)
-
-#
 def getOutliers(fracs):
     '''
     Calculate outlying fractions with an ESD test until the first
     10 values have been removed (i.e. will not form more than 10 edges)
-    fracs is a dict in the form of { window = (fraction,count) }
+    fracs is a dict in the form of { window: fraction }
     '''
     # Start by collecting all fractions
-    y = []
-    ks = []
-    for k,v in fracs.items():
-        ks.append(k)
-        y.append(v[0])
-
-#    ks = list(fracs.keys())
+    y = list(fracs.values())
     n = len(y)
     alpha = 0.000000000001
     tokeep = None
     y2 = np.array(y)
-    ks = np.array(ks)
+    ks = np.array(list(fracs.keys()))
     outl = {} # dict to collect output
 
     ## Compute test statistic until r=10 values have been

@@ -1,5 +1,7 @@
-# To format a 2-dimensional dictionary to a human readable table
 def formatTable(dict1):
+    '''
+    To format a 2-dimensional dictionary to a human readable table
+    '''
     firstrow = "Contig"
     remaining_table = ""
     for k in sorted(dict1):
@@ -17,6 +19,9 @@ def formatTable(dict1):
     return table
 
 def formatGFA(dict1):
+    '''
+    Given a graph in a dict, returns a list of strings in gfa format
+    '''
     gfalist = []
 
     # Write link for every edge in the input dict
@@ -61,6 +66,9 @@ def formatGFA(dict1):
     return gfalist
 
 def formatTSV(dict1, l):
+    '''
+    Given a dict, returns a string in tsv format
+    '''
     tsvlist = []
 
     # Write link for every edge in the input dict
@@ -101,4 +109,30 @@ def formatTSV(dict1, l):
 
     return tsvlist
 
-#def formatBed()
+def formatBed(dict):
+    '''
+    Given a dict where keys are ID's of linked contigs and values are lists
+    containing tuples of the format ( str(feature), int(length) ), returns a string
+    in the bed format.
+    '''
+    bed = []
+    for key,value in dict.items():
+        current_coordinate = 0 # Keep track of the coordinate to write new features to
+
+        for feat in value:
+            line = []
+            line.append(key)
+            line.append(str(current_coordinate))
+            line.append(str(current_coordinate+feat[2]))
+            line.append(feat[0])
+            line.append("0")
+            if feat[1] == "f":
+                line.append("+")
+            elif feat[1] == "r":
+                line.append("-")
+            else:
+                line.append(".")
+            current_coordinate = current_coordinate+feat[2]
+            bed.append("\t".join(line))
+
+    return "\n".join(bed)

@@ -27,7 +27,7 @@ def findStartingNode(graph):
     1.  Starting node has a single edge. Connected node has two edges, one back and one to
         the opposite end of starting node. Opposite end has only this edge.
     The rest of the scenarios have either no edges, one edge, two different, three different, or
-    more than three edges at the opposite end. If one egde, this needs to be connected to a node
+    more than three edges at the opposite end. If one edge, this needs to be connected to a node
     with several connections.
     2.  Starting node has a single edge. Connected node has also only one (the same).
     3.  Starting node has two edges to the same node. Both connections only have edges back
@@ -90,8 +90,8 @@ def findStartingNode(graph):
             and conn[0][:-1] == conn[1][:-1]:
 
                 # Check for 3
-                if len(graph[conn[0]]) == 1 \
-                and len(graph[conn[1]]) == 1:
+                if len(findLink(conn[0])) == 1 \
+                and len(findLink(conn[1])) == 1:
                     linked_contig_ends.append(node)
                     continue
 
@@ -188,6 +188,7 @@ def create_linked_contig(starting_region):
     tig = starting_region[:-1]
     side = starting_region[-1]
     i = findLink(starting_region)
+    t = None
 
     if side == "e":
         orientation = "f"
@@ -195,21 +196,7 @@ def create_linked_contig(starting_region):
         orientation = "r"
     else:
         orientation = "u"
-        # If orientation of starting_region is unknown, use the mummerTools module to attempt to
-        # find it.
         i = findLink(tig+"e") # Collect link. Both ends are connected to the same node so "e" is arbitrarily chosen
-        #iseq = i[:-1]
-        #idir = i[-1]
-        #if idir == "r":
-        #    iseq = nt.reverse_complement(iseq)
-
-        # Collect sequences
-        #ref_fasta = fastafile.fetch(reference=tig, start=trimmed_fasta_coords[tig][0], end=trimmed_fasta_coords[tig][1])
-        #query_fasta = fastafile.fetch(reference=iseq, start=trimmed_fasta_coords[iseq][0], end=trimmed_fasta_coords[iseq][1])
-
-        # Align
-        #delta, reflen, querylen = mt.align(ref_fasta,query_fasta)
-        #alignment, orientation = mt.findDirectionRef(delta, reflen, querylen)
 
     if orientation != None:
         # IF direction is still unknown, i.e. no good alignment was found,
@@ -246,8 +233,6 @@ def create_linked_contig(starting_region):
             same, diff = s[0], s[1]
             links.append( "".join([same,"u"]) ) # Direction of middle node is unknown
             t = diff
-        else:
-            t = None
 
     while t != None:
         tig = t[:-1]
