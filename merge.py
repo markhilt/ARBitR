@@ -440,6 +440,11 @@ def merge_fasta():
     with open(outfilename+".bed","w",encoding = "utf-8") as bedout:
         bedout.write(ft.formatBed(bed))
 
+    # Clean up leftover files
+    os.remove("out.delta")
+    os.remove("ref.fa")
+    os.remove("query.fa")
+
     print("\nDone.")
 
 # Main.
