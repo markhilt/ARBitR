@@ -1,4 +1,4 @@
-#!/home/markus/miniconda3/bin/python3.6
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 import argparse
