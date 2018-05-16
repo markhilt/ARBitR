@@ -46,6 +46,9 @@ def createConsensus(delta,string1,string2):
         elif new_string2[i] == ".":
             cons += new_string1[i]
         else:
-            cons += "N"
+            # At disagreeing bases, take base from string1. This is better than
+            # inserting an N or IUPAC coded base as some mappers don't support this.
+            # After a round of polishing this will be fixed
+            cons += new_string1[i]
 
     return cons
