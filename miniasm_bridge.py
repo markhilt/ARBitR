@@ -5,22 +5,28 @@ import mappy as mp
 import argparse
 import re
 
-parser = argparse.ArgumentParser(description="Extract split mapping hits.")
+'''
+Uses mappy, minimap's python module, to map long reads across scaffolds in a genome assembly and fill the scaffold with sequence from the read. Error-corrected reads (e.g. as output by canu) are recommended,
+but will also work with raw long reads (in which case polishing is extra recommended).
+'''
+
+parser = argparse.ArgumentParser(description="Fill scaffolds using error-corrected reads. Outputs a fasta with (only) the fixed scaffolds.")
 parser.add_argument("fasta", help="Reference fasta file. Required.", type = str)
-parser.add_argument("fastq", help="Input fastq file. Required.", type = str)
+parser.add_argument("fastq", help="Input fast(q/a) file. Error-corrected reads recommended. Required.", type = str)
+parser.add_argument("-o","--output", help="Prefix for output files.", type = str)
 args = parser.parse_args()
 
-"""
-def breakScaffold(aligned_read_seq, aligned_read_coords):
+def getOut():
     '''
-    Given an aligned read sequence and
-    Might be good to make a consensus of all reads aligning here men orkar fan inte nu.
+    Creates a prefix for output files.
     '''
-    read_seq = aligned_read_seq[aligned_read_coords[0]:aligned_read_coords[1]]
-    newseq = "".join([ scaffold_seq[:scaffold_coords[0]], read_seq, scaffold_seq[scaffold_coords[1]:] ])
-    return newseq
-"""
-
+    global outfilename
+    if args.output:
+        outfilename = args.output
+    elif "/" in args.input_bam:
+        outfilename = args.input_bam.split("/")[-1].split(".bam")[0]
+    else:
+        outfilename = args.input_bam.split(".bam")[0]
 
 
 def chopCigar(cigar):
@@ -113,7 +119,7 @@ def createFixedSequence(old_seq, fills):
 
 def find_scaffold(seq):
     '''
-    This shit will not be needed later
+    Finds all polyN's in the genome assembly.
     '''
     Ns = [n.span() for n in re.finditer(r"((N)\2{9,})", seq)] # Convert span of hits to list
     #Ns = [n.span() for n in re.finditer(r"[N]+", seq)] # Convert span of hits to list
@@ -210,10 +216,11 @@ def main():
                                 del scaffolds[h.ctg]
 
     print("Done mapping. Filling scaffolds.")
+    getOut()
 
     # Create new sequences and write report
-    with open("test.fasta", "w") as fastaout:
-        with open("report_test.txt", "w") as reportout:
+    with open(outfilename+".fasta", "w") as fastaout:
+        with open(outfilename+".report.txt", "w") as reportout:
             for r,f in fillings.items():
                 fasta = "".join( [">", r, "\n", createFixedSequence(a.seq(r),f)] )
                 fastaout.write(fasta+"\n")
@@ -225,10 +232,6 @@ def main():
                 for entry in scf_coords:
                     report_line = "Remaining scaffold {}: {}-{}\n".format(scf_tig,str(entry[0]),str(entry[1]))
                     reportout.write(report_line)
-
-
-
-
 
 if __name__ == "__main__":
     main()
