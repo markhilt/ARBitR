@@ -23,10 +23,10 @@ def getOut():
     global outfilename
     if args.output:
         outfilename = args.output
-    elif "/" in args.input_bam:
-        outfilename = args.input_bam.split("/")[-1].split(".bam")[0]
+    elif "/" in args.fasta:
+        outfilename = args.fasta.split("/")[-1].split(".fasta")[0] + ".scaffold-filled"
     else:
-        outfilename = args.input_bam.split(".bam")[0]
+        outfilename = args.fasta.split(".fasta")[0] + ".scaffold-filled"
 
 
 def chopCigar(cigar):
@@ -169,6 +169,7 @@ def main():
             #    stop = 350718
     '''
     #scaffolds["linked_contig_25_pilon"] = [(44267, 44405)]
+    print("Mapping reads.")
 
     # Map reads, and shout if mapping is found across scaffold coords
     mapping = {} # To fill with reads mapping across scaffolded regions
