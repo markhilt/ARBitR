@@ -549,7 +549,7 @@ def main():
 
         # Skip to next window if there are no good links
         if len(sorted_outliers) == 0:
-            completed_windows += 1
+            donewindows += 1
             continue
 
         # Several hits will be given edges in the gfa, if present
