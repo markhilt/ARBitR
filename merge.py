@@ -115,7 +115,7 @@ def getOut():
 
 def formatContigs(samfile):
     '''
-    Creates a dict where keys are contigs and values their lengths
+    Creates a dict where keys are contig names and values their lengths
     '''
     i = 0
     contig_dict = {}
@@ -196,13 +196,24 @@ def merge_fasta():
             # Trim only sides where links are formed
             # If direction of node is unknown (last character in string == "u"),
             # trim both sides
-            # If first connected node, trim last coordinate
-            if i == edge[0] and i[-1] != "u":
+
+            # If first connected node in forward orientation, trim last coordinate
+            if i == edge[0] and i[-1] == "f":
                 trimmed_fasta_coords[tig] = [trimmed_fasta_coords[tig][0], trimmed_fasta_coords[tig][1] + trimFasta(tig+"e")]
-            # If last connected node, trim first coordinate
-            elif i == edge[-1] and i[-1] != "u":
+
+            # If first connected node in reverse orientation, trim first coordinate
+            elif i == edge[0] and i[-1] == "r":
                 trimmed_fasta_coords[tig] = [trimmed_fasta_coords[tig][0] + trimFasta(tig+"s"), trimmed_fasta_coords[tig][1]]
-            # If node is connected at both sides, trim both
+
+            # If last connected node in forward orientation, trim first coordinate
+            elif i == edge[-1] and i[-1] == "f":
+                trimmed_fasta_coords[tig] = [trimmed_fasta_coords[tig][0] + trimFasta(tig+"s"), trimmed_fasta_coords[tig][1]]
+
+            # If last connected node in reverse orientation, trim last coordinate
+            elif i == edge[-1] and i[-1] == "f":
+                trimmed_fasta_coords[tig] = [trimmed_fasta_coords[tig][0], trimmed_fasta_coords[tig][1] + trimFasta(tig+"e")]
+
+            # If node is connected at both sides or orientation is unknown, trim both sides
             else:
                 trimmed_fasta_coords[tig] = [trimmed_fasta_coords[tig][0] + trimFasta(tig+"s"), trimmed_fasta_coords[tig][1] + trimFasta(tig+"e")]
 
