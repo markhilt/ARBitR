@@ -148,7 +148,7 @@ def pairwiseComps(GEMbase):
     while len(GEMbase.keys()) > 1:
 
         # Report progress every 20 windows
-        if done in range(0,100000000,300):
+        if done in range(0,100000000,20):
             print(reportProgress(done, total_windows))
 
         # Pop out an entry in the dict
@@ -251,12 +251,12 @@ def main():
         suspects = evaluateOutliers(col, outliers_short)
 
         if suspects != []:
-            output.append("{}: {}-{} ({})".format(col[0],col[1],col[2], ref_lengths[col[0]]))
+            output.append("{}:{}-{} ({})".format(col[0],col[1],col[2], ref_lengths[col[0]]))
             for k,v in outliers_short.items():
                 output.append("\t{}\t{}".format(str(k), str(v)))
 
     print("\nDone. Writing output to {0}.txt.\n".format(outfilename))
-    with open(outfilename+".txt","w",encoding = "utf-8") as out:
+    with open(outfilename+".misasm.txt","w",encoding = "utf-8") as out:
         out.write("\n".join(output))
 
 
