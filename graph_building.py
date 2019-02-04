@@ -24,12 +24,12 @@ def findStartingNode(graph):
     the number of edges from every connected node,
     and the number of edges from the opposite side of the given node.
     There are a total of 5 different scenarios considered here.
-    1.  Starting node has a single edge. Connected node has two edges, one back and one to
+    1.  Starting node has a single outgoing edge. Connected node has two edges, one back and one to
         the opposite end of starting node. Opposite end has only this edge.
     The rest of the scenarios have either no edges, one edge, two different, three different, or
     more than three edges at the opposite end. If one edge, this needs to be connected to a node
     with several connections.
-    2.  Starting node has a single edge. Connected node has also only one (the same).
+    2.  Starting node has a single outgoing edge. Connected node has also only one (the same).
     3.  Starting node has two edges to the same node. Both connections only have edges back
         to the starting node.
     4.  Starting node has two edges to the same node. Both connections have two edges;
@@ -48,7 +48,7 @@ def findStartingNode(graph):
     # Go through every node
     for node in graph:
 
-        # Collect edge(s) to current node
+        # Collect incoming edges
         conn = findLink(node)
 
         # Collect opposite end of this node
@@ -81,7 +81,7 @@ def findStartingNode(graph):
 
             # Check for 2
             if len(conn) == 1 \
-            and len(graph[conn[0]]) == 1:
+            and len(findLink(conn[0])) == 1:
                 linked_contig_ends.append(node)
                 continue
 
