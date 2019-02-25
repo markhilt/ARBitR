@@ -2,8 +2,6 @@ import numpy as np
 import pysam
 from scipy.stats import t
 import mappy as mp
-import ipdb
-
 
 # Included modules
 import nuclseqTools as nt

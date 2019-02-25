@@ -2,7 +2,6 @@ import nuclseqTools as nt
 import calcESD as esd
 import misc
 import mappy as mp
-import ipdb
 
 class Linkgraph:
     def __init__(self, nodes = [], edges = []):
