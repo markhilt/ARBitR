@@ -18,20 +18,65 @@ def formatTable(dict1):
     table = firstrow + "\n" + remaining_table
     return table
 
-def formatGFA(dict1):
+def formatGFA(linkgraph):
+    '''
+    Given linkgraph object, returns a string in gfa format.
+    '''
+    gfalist = []
+
+    # Write link for every edge in the input graph
+    for edge in linkgraph.edges:
+        ref_tig, ref_side = edge[0][:-1], edge[0][-1]
+        query_tig, query_side = edge[1][:-1], edge[1][-1]
+
+        # Find out which contig ends are linked
+        # Possibilities:
+        # 1. start of ref to start of query
+        # 2. start of ref to end of query
+        # 3. end of ref to start of query
+        # 4. end of ref to end of query
+
+        # 1.
+        if ref_side == "s" and query_side == "s":
+            direction = "-"
+            ldirection = "+"
+
+        # 2.
+        elif ref_side == "s" and query_side == "e":
+            direction = "-"
+            ldirection = "-"
+
+        # 3.
+        elif ref_side == "e" and query_side == "s":
+            direction = "+"
+            ldirection = "+"
+
+        # 4.
+        elif ref_side == "e" and query_side == "e":
+            direction = "+"
+            ldirection = "-"
+
+        if direction and ldirection:
+            gfalist.append("L\t{}\t{}\t{}\t{}\t*\n".format(ref_tig,direction,query_tig,ldirection) )
+
+    return "".join(gfalist)
+
+
+# Deprecated
+def formatGFA_from_dict(dict1):
     '''
     Given a graph in a dict, returns a list of strings in gfa format
     '''
     gfalist = []
 
     # Write link for every edge in the input dict
-    for k in dict1:
+    for k, val in dict1.items():
         contig = k[0:-1]
         side = k[-1]
 
-        for v in dict1[k]:
-            ltig = v[0:-1]
-            lside = v[-1]
+        for v in val:
+            ltig = v[0][0:-1]
+            lside = v[0][-1]
 
             # Find out which contig ends are linked
             # Possibilities:
