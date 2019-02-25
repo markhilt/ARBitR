@@ -1,4 +1,3 @@
-import mummerTools as mt
 import nuclseqTools as nt
 import calcESD as esd
 import misc
