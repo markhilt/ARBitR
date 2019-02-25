@@ -8,8 +8,6 @@ import nuclseqTools as nt
 import graph_building as gb
 import mappy_alignment_tools as mat
 import misc
-import mummerTools as mt # deprecated
-
 
 def countReads(contig,coords_to_check):
     '''
