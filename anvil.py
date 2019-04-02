@@ -40,10 +40,6 @@ parser.add_argument("-i", "--input_fasta", \
                     If not specified, will only output linkage graph in \
                     .gfa and .tsv format.", \
                     type = str)
-parser.add_argument("-r", "--input_long_reads", \
-                    help="Input fasta file of error corrected long reads. \
-                    Optional.", \
-                    type = str)
 parser.add_argument("-s","--region_size", \
                     help="Size of region of contig start and end to collect \
                     barcodes from. [20000]", \
@@ -58,8 +54,8 @@ parser.add_argument("-f","--barcode_fraction", \
                     default = 0.01, \
                     type = float)
 parser.add_argument("-q","--mapq", \
-                    help="Mapping quality cutoff value. [40]", \
-                    default = 40, \
+                    help="Mapping quality cutoff value. [60]", \
+                    default = 60, \
                     type = int)
 parser.add_argument("-o","--output", \
                     help="Prefix for output files.", \
@@ -158,26 +154,10 @@ def main():
             # If user gave an assembly fasta file, use this for merging
             misc.printstatus("Found fasta file for merging: {}".format(args.input_fasta))
             new_scaffolds = merge_fasta.main(args.input_fasta, args.input_bam, paths)
-
-        if args.input_long_reads:
-            # If user gave a fasta file of error corrected long reads,
-            # use this to fill gaps in the scaffolds
-            if os.path.isfile(args.input_long_reads):
-                misc.printstatus("Found long reads for gap filling: {}".format(args.input_long_reads))
-
-                # Write temp sequences to fasta file
-                writeFasta("tmp",new_scaffolds)
-
-                gapfilled_scaffolds = {**new_scaffolds, **gapfill.main("tmp.fasta", args.input_long_reads)}
-                misc.printstatus("Writing merged, gapfilled fasta to {0}.fasta".format(outfilename))
-                writeFasta(outfilename,gapfilled_scaffolds)
-
-        else:
-            # else finish
-            misc.printstatus("No long reads specified for gap filling.")
             misc.printstatus("Writing merged fasta to {0}.fasta".format(outfilename))
             writeFasta(outfilename,new_scaffolds)
-
+        else:
+            raise Exception("Fasta file not found: ".format(args.input_fasta))
 
     else:
         # else finish

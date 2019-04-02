@@ -2,6 +2,8 @@ import numpy as np
 import pysam
 from scipy.stats import t
 import mappy as mp
+import ipdb
+
 
 # Included modules
 import nuclseqTools as nt
@@ -34,22 +36,23 @@ def trimFasta(contig_side_to_trim):
 
         if side == "s":
             coords_to_check = [0,coords_at_a_time]
+            cov = countReads(tig,coords_to_check)
+
             while cov < mincov:
+                coords_to_trim += coords_at_a_time # Update with new end coordinate
+                coords_to_check = [x+coords_at_a_time for x in coords_to_check] # And move to next 10 coordinates
                 cov = countReads(tig,coords_to_check)
 
-                if cov <= mincov:
-                    coords_to_trim += coords_at_a_time # Update with new end coordinate
-                    coords_to_check = [x+coords_at_a_time for x in coords_to_check] # And move to next 10 coordinates
 
         elif side == "e":
             stop = trimmed_fasta_coords[tig][1]
             coords_to_check = [stop-coords_at_a_time,stop]
-            while cov <= mincov:
-                cov = countReads(tig,coords_to_check)
+            cov = countReads(tig,coords_to_check)
 
-                if cov <= mincov:
-                    coords_to_trim = coords_to_trim - coords_at_a_time    # Update with new end coordinate
-                    coords_to_check = [x-coords_at_a_time for x in coords_to_check] # And move to next 10 coordinates
+            while cov <= mincov:
+                coords_to_trim = coords_to_trim - coords_at_a_time    # Update with new end coordinate
+                coords_to_check = [x-coords_at_a_time for x in coords_to_check] # And move to next 10 coordinates
+                cov = countReads(tig,coords_to_check)
 
     return (coords_to_trim)
 
@@ -171,8 +174,8 @@ def orientByAlignment(left, middle, right):
 
     # Do same for other side
     elif len(left_aln_keep) > 0 and len(right_aln_keep) == 0:
-        best = right_aln_keep[0]
-        for r in right_aln_keep:
+        best = left_aln_keep[0]
+        for r in left_aln_keep:
             if r.mlen > best.mlen:
                 best = r
         if best.strand == -1:
@@ -183,84 +186,17 @@ def orientByAlignment(left, middle, right):
     # If no overlaps were found, return unknown orientation
     return middle_tig + "u"
 
-def buildLinkedScaffolds(scaffolds_to_merge):
+def orient_scaffolds(scaffolds):
     '''
-    Last step of the pipeline is to merge the sequences in a given fasta file
-    into the new scaffolds that were determined previously.
+    Given a dict of scaffolds where some included conigs may be in "u"
+    orientation, tries to orient these contigs, breaks the scaffolds if
+    impossible, and returns scaffolds without u's.
     '''
-    # Next trim fasta sequences to be merged in low coverage regions
-    # trimmed_fasta_coords is a dict with coords to keep from original fasta
-    # Format: {contig: [start_coord, end_coord]}
-    # Start by filling with old coords, which will then be changed
-    global trimmed_fasta_coords
-    trimmed_fasta_coords = {}
-    for i in range(0,len(fastafile.references),1):
-        trimmed_fasta_coords[fastafile.references[i]] = [0, fastafile.lengths[i]]
-
-    # Then find new coordinates for all sequences to merge
-    misc.printstatus("Trimming contig ends...")
-    for edge in scaffolds_to_merge.values():
-        for i in edge:
-            tig = i[:-1]
-            # Trim only sides where links are formed
-            # If direction of node is unknown (last character in string == "u"),
-            # trim both sides
-
-            # If first connected node in forward orientation, trim last coordinate
-            if i == edge[0] and i[-1] == "f":
-                trimmed_fasta_coords[tig] = [trimmed_fasta_coords[tig][0], \
-                                            trimmed_fasta_coords[tig][1] + \
-                                            trimFasta(tig+"e")]
-
-            # If first connected node in reverse orientation, trim first coordinate
-            elif i == edge[0] and i[-1] == "r":
-                trimmed_fasta_coords[tig] = [trimmed_fasta_coords[tig][0] + \
-                                            trimFasta(tig+"s"), \
-                                            trimmed_fasta_coords[tig][1]]
-
-            # If last connected node in forward orientation, trim first coordinate
-            elif i == edge[-1] and i[-1] == "f":
-                trimmed_fasta_coords[tig] = [trimmed_fasta_coords[tig][0] + \
-                                            trimFasta(tig+"s"), \
-                                            trimmed_fasta_coords[tig][1]]
-
-            # If last connected node in reverse orientation, trim last coordinate
-            elif i == edge[-1] and i[-1] == "f":
-                trimmed_fasta_coords[tig] = [trimmed_fasta_coords[tig][0], \
-                                            trimmed_fasta_coords[tig][1] + \
-                                            trimFasta(tig+"e")]
-
-            # If node is connected at both sides or orientation is unknown, trim both sides
-            else:
-                trimmed_fasta_coords[tig] = [trimmed_fasta_coords[tig][0] + \
-                                            trimFasta(tig+"s"), \
-                                            trimmed_fasta_coords[tig][1] + \
-                                            trimFasta(tig+"e")]
-
-    # Before merging can begin, the direction of any contigs of unknown
-    # orientation needs to be determined. If the direction cannot be determined,
-    # the linked contig is broken.
-
-    # For the contigs that were now directed, find new trim coordinates if they are at the beginning
-    # or the end of the linked contig
-    # TODO
-
-    # Then walk through the linked_contigs dict, gradually building each contig from left to right.
-    # Sequences to be merged are saved in merged_seqs in the format
-    # {new_linked_contig_ID: "ATCG..." }
-    merged_seqs = {}
-    contigs_to_exclude = [] # Collect contigs that were merged into new linked contigs
-    bed = {} # Collect coords to write bed.
-
-    misc.printstatus("Building linked contigs.")
-
-    # TODO write scaffolds and contigs seperately
-
     # Check if there is a contig of undetermined orientation.
     # In that case, try to find the orientation.
-    scaffold_orientation = dict(scaffolds_to_merge) # New dict to loop through as we need to mutate
+    scaffold_orientation = dict(scaffolds) # New dict to loop through as we need to mutate
     n_oriented = 0
-    for linked_tig_ID,tig_list in scaffolds_to_merge.items():
+    for linked_tig_ID,tig_list in scaffolds.items():
         for idx, tig in enumerate(tig_list):
             if tig[-1] == "u":
                 oriented_tig = orientByAlignment(   tig_list[idx-1], \
@@ -273,27 +209,114 @@ def buildLinkedScaffolds(scaffolds_to_merge):
                     n_oriented += 1
 
     misc.printstatus("Tigs oriented by alignment: {}".format(str(n_oriented)))
-    # Then do another passthrough where paths are broken at remaining u's
 
+    # Then do another passthrough where paths are broken at remaining u's
+    final_scaffolds = {}
+    nr = 1
     for linked_tig_ID,tig_list in scaffold_orientation.items():
+        breakpos = [] # Collect indices where tig_list should be broken
+
         for idx, tig in enumerate(tig_list):
             if tig[-1] == "u":
+                breakpos.append(idx)
 
-                # Grab current last scaffold number
-                max_scf_nr = max( [ int(a.split("_")[-1]) for a in scaffolds_to_merge.keys() ] )
+        if len(breakpos) > 0:
+            start = 0 # If more than one contig with u, we need to change start
+            for p in breakpos:
 
                 # Current path will end at current index with the same ID
-                scaffolds_to_merge[linked_tig_ID] = tig_list[:idx]
+                final_scaffolds["scaffold_"+str(nr)] = tig_list[start:p]
+                nr += 1
 
                 # Then add new path for the middle contig
-                scaffolds_to_merge["scaffold_"+str(max_scf_nr)] = tig_list[idx]
+                final_scaffolds["scaffold_"+str(nr)] = [tig_list[p][:-1]+"f"]
+                nr += 1
 
-                # And the remainder of the tig_list
-                scaffolds_to_merge["scaffold_"+str(max_scf_nr+1)] = tig_list[idx:]
+                # Change start position
+                start = p+1
+
+            # When no more positions to break at, add remainder of tig_list
+            final_scaffolds["scaffold_"+str(nr)] = tig_list[start:]
+            nr += 1
+
+        else:
+            final_scaffolds["scaffold_"+str(nr)] = tig_list
+            nr += 1
+
+    return final_scaffolds
+
+
+def buildLinkedScaffolds(scaffolds_to_merge):
+    '''
+    Last step of the pipeline is to merge the sequences in a given fasta file
+    into the new scaffolds that were determined previously.
+    '''
+    # Next trim fasta sequences to be merged in low coverage regions
+    # trimmed_fasta_coords is a dict with coords to keep from original fasta
+    # Format: {contig: [start_coord, end_coord]}
+    # Start by filling with old coords, which will then be changed
+    global trimmed_fasta_coords
+    trimmed_fasta_coords = {}
+    for i in range(len(fastafile.references)):
+        trimmed_fasta_coords[fastafile.references[i]] = [0, fastafile.lengths[i]]
+
+    #ipdb.set_trace()
+    # Then find new coordinates for all sequences to merge
+    misc.printstatus("Trimming contig ends...")
+
+    for edge in scaffolds_to_merge.values():
+        if len(edge) > 1:
+            for i in edge:
+                tig = i[:-1]
+                # Trim only sides where links are formed
+                # If direction of node is unknown (last character in string == "u"),
+                # trim both sides
+
+                # If first connected node in forward orientation, trim last coordinate
+                if i == edge[0] and i[-1] == "f":
+                    trimmed_fasta_coords[tig] = [trimmed_fasta_coords[tig][0], \
+                                                trimmed_fasta_coords[tig][1] + \
+                                                trimFasta(tig+"e")]
+
+                # If first connected node in reverse orientation, trim first coordinate
+                elif i == edge[0] and i[-1] == "r":
+                    trimmed_fasta_coords[tig] = [trimmed_fasta_coords[tig][0] + \
+                                                trimFasta(tig+"s"), \
+                                                trimmed_fasta_coords[tig][1]]
+
+                # If last connected node in forward orientation, trim first coordinate
+                elif i == edge[-1] and i[-1] == "f":
+                    trimmed_fasta_coords[tig] = [trimmed_fasta_coords[tig][0] + \
+                                                trimFasta(tig+"s"), \
+                                                trimmed_fasta_coords[tig][1]]
+
+                # If last connected node in reverse orientation, trim last coordinate
+                elif i == edge[-1] and i[-1] == "f":
+                    trimmed_fasta_coords[tig] = [trimmed_fasta_coords[tig][0], \
+                                                trimmed_fasta_coords[tig][1] + \
+                                                trimFasta(tig+"e")]
+
+                # If node is connected at both sides or orientation is unknown, trim both sides
+                else:
+                    trimmed_fasta_coords[tig] = [trimmed_fasta_coords[tig][0] + \
+                                                trimFasta(tig+"s"), \
+                                                trimmed_fasta_coords[tig][1] + \
+                                                trimFasta(tig+"e")]
+
+    # Then walk through the linked_contigs dict, gradually building each contig from left to right.
+    # Sequences to be merged are saved in merged_seqs in the format
+    # {new_linked_contig_ID: "ATCG..." }
+    merged_seqs = {}
+    bed = {} # Collect coords to write bed.
+
+    misc.printstatus("Building linked contigs.")
+
+    # TODO write scaffolds and contigs seperately
 
     number_of_links = 0
     for key, value in scaffolds_to_merge.items():
         number_of_links += len(value)-1
+
     misc.printstatus("Number of links: {}".format(number_of_links))
 
     merges = 0
@@ -302,85 +325,87 @@ def buildLinkedScaffolds(scaffolds_to_merge):
     for linked_tig_ID,tig_list in scaffolds_to_merge.items():
         # Go through every linked contig in the dict to align and merge the sequences
         # contained in the values
-        tig_counter = 0 # To keep track of where in the linked contig list we are
 
         newseq = []
         merged_coords = [] # Collect coords to write bed. Will be a list of tuples containing feature and its' length
 
-        starting_tig = None
-        for next_tig in tig_list:
-            # Exclude the tig that is being added, so it's not included in the final fasta
-            contigs_to_exclude.append(next_tig[:-1])
+        # If only one tig in the list, transfer it directly from input
+        # fasta
+        #ipdb.set_trace()
+        if len(tig_list) == 1:
+            merged_seqs[linked_tig_ID] = fastafile.fetch(reference=tig_list[0][:-1])
+        else:
+            starting_tig = None
+            for next_tig in tig_list:
 
-            # If starting_tig was not created before, i.e. if starting
-            # from the first contig, assign these variables
-            if starting_tig == None:
-                # Collect first contig
-                starting_tig = next_tig
-                # Collect name and direction of first contig
-                refname, refdirection = starting_tig[:-1], starting_tig[-1]
-                # And sequence
-                ref_fasta = fastafile.fetch(reference=refname, \
-                                            start=trimmed_fasta_coords[refname][0], \
-                                            end=trimmed_fasta_coords[refname][1])
+                # If starting_tig was not created before, i.e. if starting
+                # from the first contig, assign these variables
+                if starting_tig == None:
+                    # Collect first contig
+                    starting_tig = next_tig
+                    # Collect name and direction of first contig
+                    refname, refdirection = starting_tig[:-1], starting_tig[-1]
 
-                # Reverse complement if necessary
-                if refdirection == "r":
-                    ref_fasta = nt.reverse_complement(ref_fasta)
+                    # And sequence
+                    ref_fasta = fastafile.fetch(reference=refname, \
+                                                start=trimmed_fasta_coords[refname][0], \
+                                                end=trimmed_fasta_coords[refname][1])
 
-            # If tig_started == True, i.e. this is the second or more run through the loop,
-            # there is already a starting point, i.e. newref.
-            # Keep aligning and merging linked contigs to this one.
-            # Reference is then the last contig visited in the iteration and query the current
-            else:
-                # This path is taken when two sequences are to be aligned
+                    # Reverse complement if necessary
+                    if refdirection == "r":
+                        ref_fasta = nt.reverse_complement(ref_fasta)
 
-                # Collect next tig to be merged into the linked contig
-                queryname, querydirection = next_tig[:-1], next_tig[-1]
-                query_fasta = fastafile.fetch(  reference=queryname, \
-                                                start=trimmed_fasta_coords[queryname][0], \
-                                                end=trimmed_fasta_coords[queryname][1])
-
-                # Reverse complement if necessary
-                if querydirection == "r":
-                    query_fasta = nt.reverse_complement(query_fasta)
-
-                # Align trimmed contig sequences using mappy
-                alignment = mat.findOverlap(ref_fasta,query_fasta)
-
-                # If the expected alignment was found, create the "consensus"
-                if alignment != None:
-                    cons = mat.createConsensus(alignment,ref_fasta,query_fasta)
-
-                    # To save some computing, only align to the last 100kb
-                    # during the next round, unless we're at the last contig
-                    # and there is no next round
-                    if next_tig != tig_list[-1]:
-                        ref_fasta = cons[-100000:]
-                        newseq.append(cons[:-100000])
-
-                    # In which case we append the whole sequence
-                    else:
-                        newseq.append(cons)
-                    merges += 1
-
-                # If the correct alignment was not found, instead create scaffold by inserting 10*N:
+                # If tig_started == True, i.e. this is the second or more run through the loop,
+                # there is already a starting point, i.e. newref.
+                # Keep aligning and merging linked contigs to this one.
+                # Reference is then the last contig visited in the iteration and query the current
                 else:
-                    newseq.append(ref_fasta)
-                    newseq.append("NNNNNNNNNN")
+                    # This path is taken when two sequences are to be aligned
 
-                    if next_tig != tig_list[-1]:
-                        ref_fasta = query_fasta
+                    # Collect next tig to be merged into the linked contig
+                    queryname, querydirection = next_tig[:-1], next_tig[-1]
+                    query_fasta = fastafile.fetch(  reference=queryname, \
+                                                    start=trimmed_fasta_coords[queryname][0], \
+                                                    end=trimmed_fasta_coords[queryname][1])
+
+                    # Reverse complement if necessary
+                    if querydirection == "r":
+                        query_fasta = nt.reverse_complement(query_fasta)
+
+                    # Align trimmed contig sequences using mappy
+                    alignment = mat.findOverlap(ref_fasta,query_fasta)
+
+                    # If the expected alignment was found, create the "consensus"
+                    if alignment != None:
+                        cons = mat.createConsensus(alignment,ref_fasta,query_fasta)
+
+                        # To save some computing, only align to the last 100kb
+                        # during the next round, unless we're at the last contig
+                        # and there is no next round
+                        if next_tig != tig_list[-1]:
+                            ref_fasta = cons[-100000:]
+                            newseq.append(cons[:-100000])
+
+                        # In which case we append the whole sequence
+                        else:
+                            newseq.append(cons)
+                        merges += 1
+
+                    # If the correct alignment was not found, instead create scaffold by inserting 10*N:
                     else:
-                        newseq.append(query_fasta)
-                    gaps += 1
+                        newseq.append(ref_fasta)
+                        newseq.append("NNNNNNNNNN")
 
-        # After merging every contig into the linked scaffold,
-        # join the newseq list and add to the dict merged_seqs
-        merged_seqs[linked_tig_ID] = ''.join(newseq)
+                        if next_tig != tig_list[-1]:
+                            ref_fasta = query_fasta
+                        else:
+                            newseq.append(query_fasta)
+                        gaps += 1
 
-        # Go to next contig in the list
-        tig_counter += 1
+            # After merging every contig into the linked scaffold,
+            # join the newseq list and add to the dict merged_seqs
+            merged_seqs[linked_tig_ID] = ''.join(newseq)
+
     misc.printstatus("Number of aligned merges: {}".format(str(merges)))
     misc.printstatus("Number of gaps introduced: {}".format(str(gaps)))
     return merged_seqs
@@ -395,21 +420,10 @@ def main(input_fasta, input_bam, scaffolds):
     fastafile = pysam.FastaFile(input_fasta)
     samfile = pysam.AlignmentFile(input_bam, "rb")
 
-    # Determine merges to be made
-    scaffolds_to_merge = {}
-    remaining_contigs = {}
-    for k,v in scaffolds.items():
-        if len(v) > 1:
-            scaffolds_to_merge[k] = v
-        else:
-            remaining_contigs[k] = v
+    # First try to find orientation of any u's
+    oriented_scaffolds = orient_scaffolds(scaffolds)
 
-    linked_scaffolds = buildLinkedScaffolds(scaffolds_to_merge)
-    carryover_contigs = {}
+    # Then merge final scaffolds
+    linked_scaffolds = buildLinkedScaffolds(oriented_scaffolds)
 
-    for k,v in remaining_contigs.items():
-        carryover_contigs[k] = fastafile.fetch(reference=v[0][:-1])
-
-    output_scaffolds = {**carryover_contigs, **linked_scaffolds}
-
-    return output_scaffolds
+    return linked_scaffolds
