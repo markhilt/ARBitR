@@ -6,7 +6,7 @@ Script collection for quality control and merging/scaffolding of genome assembli
 ## Dependencies
 - Python3
 - [Pysam](https://github.com/pysam-developers/pysam)
-- [Mummer](https://pypi.org/project/mappy/)
+- [Mappy](https://pypi.org/project/mappy/)
 
 ## Description
 AnVIL is used for merging and scaffolding a genome assembly. It uses pysam to scan the ends of contigs in a given bam file, collects all GEM barcodes from reads that align to each contig end, and compares the barcodes in all contig ends. An object called a linkgraph is then built, where nodes (contig ends) with a higher-than-expected fraction of shared barcodes are connected with an edge. Unique paths through the graph can be used to build scaffolds. First, contig ends without read coverage are trimmed off. Mappy is then used to try to find an overlap between the contig ends. If an overlap is found, the contigs are fused together. If no overlap is found, the contigs are merged with an N*10 gap.
