@@ -291,7 +291,7 @@ def buildLinkedScaffolds(scaffolds_to_merge):
                                                 trimmed_fasta_coords[tig][1]]
 
                 # If last connected node in reverse orientation, trim last coordinate
-                elif i == edge[-1] and i[-1] == "f":
+                elif i == edge[-1] and i[-1] == "r":
                     trimmed_fasta_coords[tig] = [trimmed_fasta_coords[tig][0], \
                                                 trimmed_fasta_coords[tig][1] + \
                                                 trimFasta(tig+"e")]

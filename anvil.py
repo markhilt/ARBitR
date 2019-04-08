@@ -27,7 +27,6 @@ import graph_building
 import barcode_collection
 import misc
 import merge_fasta
-#import gapfill
 
 parser = argparse.ArgumentParser(description="Reads a bam file, creates links \
                                             between contigs based on linked read \
