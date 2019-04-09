@@ -194,6 +194,124 @@ def orientByAlignment(left, middle, right):
     # If no overlaps were found, return unknown orientation
     return middle_tig + "u"
 
+# For now keep separate methods for orientation by alignment of first
+# or last contig in a list
+def orientByAlignmentFirst(first, right):
+    first_tig = first[:-1] # Our goal here is to find first_dir
+    right_tig, right_dir = right[:-1], right[-1]
+
+    if first_tig not in fastafile.references \
+    or right_tig not in fastafile.references:
+        raise Exception("Linkgraph error: node not in graph")
+
+    # First collect sequences
+    first_seq = fastafile.fetch(reference=first_tig)
+    right_seq = fastafile.fetch(reference=right_tig)
+
+    # Fix orientation so we can look for the overlap between left_tig end,
+    # middle_tig and right_tig start
+    if right_dir == "r":
+        right_seq = nt.reverse_complement(right_seq)
+
+    # Use mappy to find the best overlap between the three
+    # First write the left and right sequences to a temp fasta on disk
+    # and create an index from this
+    with open("tmp.fasta", "w") as tmp:
+        tmp.write(">{}\n".format(right_tig))
+        tmp.write(right_seq)
+
+    idx = mp.Aligner(fn_idx_in="tmp.fasta", preset="asm5")
+
+    # Align
+    alignments = idx.map(first_seq)
+    right_aln_keep = [] # Right alignments to keep
+
+    # Iterate over alignments and search for overlapping ends
+    if alignments:
+        for aln in alignments:
+            if aln.ctg == right_tig \
+            and aln.r_st < 1000:
+                if aln.q_st < 1000 or aln.q_en > len(first_seq) - 1000:
+                    right_aln_keep.append(aln)
+
+    # If only one side has an overlap, use this to orient
+    elif len(right_aln_keep) > 0:
+
+        # Choose the longest alignment as there might be alignments
+        # to both sides of the middle contig
+        best = right_aln_keep[0]
+        for r in right_aln_keep:
+            if r.mlen > best.mlen:
+                best = r
+        if best.strand == -1:
+            return first_tig + "r"
+        elif best.strand == 1:
+            return first_tig + "f"
+
+    # If no overlaps were found, return unknown orientation
+    return first_tig + "u"
+
+
+def orientByAlignmentLast(left, last):
+
+    left_tig, left_dir = left[:-1], left[-1]
+    last_tig = last[:-1] # Our goal here is to find middle_dir
+
+    if left_tig not in fastafile.references \
+    or last_tig not in fastafile.references:
+        raise Exception("Linkgraph error: node not in graph")
+
+    # First collect sequences
+    left_seq = fastafile.fetch(reference=left_tig)
+    last_seq = fastafile.fetch(reference=middle_tig)
+
+    # Fix orientation so we can look for the overlap between left_tig end,
+    # middle_tig and right_tig start
+    if left_dir == "r":
+        left_seq = nt.reverse_complement(left_seq)
+
+    # Use mappy to find the best overlap between the three
+    # First write the left and right sequences to a temp fasta on disk
+    # and create an index from this
+    with open("tmp.fasta", "w") as tmp:
+        tmp.write(">{}\n".format(left_tig))
+        tmp.write(left_seq)
+
+    idx = mp.Aligner(fn_idx_in="tmp.fasta", preset="asm5")
+
+    # Align
+    alignments = idx.map(last_seq)
+    left_aln_keep = [] # Left alignments to keep
+
+    # Iterate over alignments and search for overlapping ends
+    if alignments:
+        for aln in alignments:
+
+            # Filter for alignments ending within the last 1 kb of left_tig
+            if aln.ctg == left_tig \
+            and aln.r_en > aln.ctg_len - 1000:
+
+                # Then check if alignment is at the beginning or end of
+                # middle_tig
+                # Keep either way. Alignments not at the ends of middle
+                # contig are discarded.
+                if aln.q_st < 1000 or aln.q_en > len(middle_seq) - 1000:
+                    left_aln_keep.append(aln)
+
+    # If only one side has an overlap, use this to orient
+    elif len(left_aln_keep) > 0:
+        best = left_aln_keep[0]
+        for r in left_aln_keep:
+            if r.mlen > best.mlen:
+                best = r
+        if best.strand == -1:
+            return last_tig + "r"
+        elif best.strand == 1:
+            return last_tig + "f"
+
+    # If no overlaps were found, return unknown orientation
+    return last_tig + "u"
+
 def orient_scaffolds(scaffolds):
     '''
     Given a dict of scaffolds where some included conigs may be in "u"
@@ -207,9 +325,16 @@ def orient_scaffolds(scaffolds):
     for linked_tig_ID,tig_list in scaffolds.items():
         for idx, tig in enumerate(tig_list):
             if tig[-1] == "u":
-                oriented_tig = orientByAlignment(   tig_list[idx-1], \
-                                                    tig_list[idx], \
-                                                    tig_list[idx+1])
+                if tig == tig_list[0]:
+                    oriented_tig = orientByAlignmentFirst(  tig_list[idx], \
+                                                            tig_list[idx+1])
+                elif tig == tig_list[-1]:
+                    oriented_tig = orientByAlignmentLast(   tig_list[idx-1], \
+                                                            tig_list[idx])
+                else:
+                    oriented_tig = orientByAlignment(   tig_list[idx-1], \
+                                                        tig_list[idx], \
+                                                        tig_list[idx+1])
                 new_tig_list = scaffold_orientation[linked_tig_ID]
                 new_tig_list[idx] = oriented_tig
                 scaffold_orientation[linked_tig_ID] = new_tig_list
