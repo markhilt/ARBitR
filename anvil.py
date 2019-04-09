@@ -39,6 +39,10 @@ parser.add_argument("-i", "--input_fasta", \
                     If not specified, will only output linkage graph in \
                     .gfa and .tsv format.", \
                     type = str)
+parser.add_argument("-p", "--input_paths", \
+                    help="Input paths file for scaffolding. Optional. \
+                    If specified, will skip linkage step.", \
+                    type = str)
 parser.add_argument("-s","--region_size", \
                     help="Size of region of contig start and end to collect \
                     barcodes from. [20000]", \
@@ -68,9 +72,9 @@ def getOut():
     if args.output:
         outfilename = args.output
     elif "/" in args.input_bam:
-        outfilename = args.input_bam.split("/")[-1].split(".bam")[0]
+        outfilename = args.input_bam.split("/")[-1].split(".bam")[0]+".anvil"
     else:
-        outfilename = args.input_bam.split(".bam")[0]
+        outfilename = args.input_bam.split(".bam")[0]+".anvil"
     return outfilename
 
 def writeGfa(outfilename, gfa_header, graph):
@@ -123,38 +127,51 @@ def main():
     input_contigs = samfile.references
     samfile.close()
 
-    # First step is to do the initial check through of the bam file,
-    # to find any region where there is a reduction in barcode continuity
-    misc.printstatus("Searching input bam file for suspicious regions: {}".format(args.input_bam))
-    #suspicious_regions = validate_runner.main(args.input_bam)
+    # If user provided a paths file, skip graph building and jump straight to
+    # scaffolding based on these paths
+    if not args.input_paths:
+        # First step is to do the initial check through of the bam file,
+        # to find any region where there is a reduction in barcode continuity
+        misc.printstatus("Searching input bam file for suspicious regions: {}".format(args.input_bam))
+        #suspicious_regions = validate_runner.main(args.input_bam)
 
-    # Second step is to collect the barcodes from the input bam file
-    misc.printstatus("Collecting barcodes.")
-    GEMlist, gfa_header = barcode_collection.main(  args.input_bam, \
-                                                    args.region_size, \
-                                                    args.mapq)
-    # Also add the suspicious region's barcodes
-    # TODO
+        # Second step is to collect the barcodes from the input bam file
+        misc.printstatus("Collecting barcodes.")
+        GEMlist, gfa_header = barcode_collection.main(  args.input_bam, \
+                                                        args.region_size, \
+                                                        args.mapq)
+        # Also add the suspicious region's barcodes
+        # TODO
 
-    # Third step is to build the link graph based on the barcodes
-    misc.printstatus("Creating link graph.")
-    graph, paths = graph_building.main(input_contigs, \
-                                    GEMlist, \
-                                    args.barcode_number, \
-                                    args.barcode_fraction)
+        # Third step is to build the link graph based on the barcodes
+        misc.printstatus("Creating link graph.")
+        graph, paths = graph_building.main(input_contigs, \
+                                        GEMlist, \
+                                        args.barcode_number, \
+                                        args.barcode_fraction)
 
-    misc.printstatus("Writing graph to {}.gfa.".format(outfilename))
-    writeGfa(outfilename, gfa_header, graph)
-    misc.printstatus("Writing paths to {}.paths.txt.".format(outfilename))
-    writePaths(outfilename, paths)
+        misc.printstatus("Writing graph to {}.gfa.".format(outfilename))
+        writeGfa(outfilename, gfa_header, graph)
+        misc.printstatus("Writing paths to {}.paths.txt.".format(outfilename))
+        writePaths(outfilename, paths)
+
+    else:
+        if os.path.isfile(args.input_paths):
+            misc.printstatus("Found input paths file: ".format(args.input_paths))
+            misc.printstatus("Using this to create scaffolds.")
+            paths = misc.readPaths(args.input_paths)
+
+        else:
+            raise Exception("Path file not found: ".format(args.input_paths))
 
     if args.input_fasta:
         if os.path.isfile(args.input_fasta):
             # If user gave an assembly fasta file, use this for merging
             misc.printstatus("Found fasta file for merging: {}".format(args.input_fasta))
-            new_scaffolds = merge_fasta.main(args.input_fasta, args.input_bam, paths)
+            new_scaffolds, scaffold_correspondence = merge_fasta.main(args.input_fasta, args.input_bam, paths)
             misc.printstatus("Writing merged fasta to {0}.fasta".format(outfilename))
             writeFasta(outfilename,new_scaffolds)
+            writePaths(outfilename, scaffold_correspondence)
         else:
             raise Exception("Fasta file not found: ".format(args.input_fasta))
 

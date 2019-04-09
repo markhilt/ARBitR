@@ -11,6 +11,14 @@ import graph_building as gb
 import mappy_alignment_tools as mat
 import misc
 
+def writePaths(outfilename, scaffolds):
+    '''
+    Writes the usable paths from the graph
+    '''
+    with open(outfilename+".paths.txt", "w") as pathsout:
+        for k,v in scaffolds.items():
+            pathsout.write("{}\t{}\n".format(k,v))
+
 def countReads(contig,coords_to_check):
     '''
     To count the number of reads aligned to a region
@@ -426,4 +434,4 @@ def main(input_fasta, input_bam, scaffolds):
     # Then merge final scaffolds
     linked_scaffolds = buildLinkedScaffolds(oriented_scaffolds)
 
-    return linked_scaffolds
+    return linked_scaffolds, oriented_scaffolds
