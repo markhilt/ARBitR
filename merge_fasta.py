@@ -255,7 +255,7 @@ def orientByAlignmentFirst(first, right):
 def orientByAlignmentLast(left, last):
 
     left_tig, left_dir = left[:-1], left[-1]
-    last_tig = last[:-1] # Our goal here is to find middle_dir
+    last_tig = last[:-1] # Our goal here is to find last_dir
 
     if left_tig not in fastafile.references \
     or last_tig not in fastafile.references:
@@ -263,7 +263,7 @@ def orientByAlignmentLast(left, last):
 
     # First collect sequences
     left_seq = fastafile.fetch(reference=left_tig)
-    last_seq = fastafile.fetch(reference=middle_tig)
+    last_seq = fastafile.fetch(reference=last_tig)
 
     # Fix orientation so we can look for the overlap between left_tig end,
     # middle_tig and right_tig start
@@ -295,7 +295,7 @@ def orientByAlignmentLast(left, last):
                 # middle_tig
                 # Keep either way. Alignments not at the ends of middle
                 # contig are discarded.
-                if aln.q_st < 1000 or aln.q_en > len(middle_seq) - 1000:
+                if aln.q_st < 1000 or aln.q_en > len(last_seq) - 1000:
                     left_aln_keep.append(aln)
 
     # If only one side has an overlap, use this to orient
