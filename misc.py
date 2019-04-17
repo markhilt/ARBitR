@@ -1,3 +1,14 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+.. module:: misc
+    :synopsis: misc implements various functions used during the anvil pipeline.
+
+Copyright (c) 2019, Johannesson lab
+Licensed under the GPL3 license. See LICENSE file.
+"""
+
 import time
 
 def printstatus(msg):
@@ -6,6 +17,13 @@ def printstatus(msg):
     '''
     now = time.asctime( time.localtime(time.time()) )
     print("[{}]\t{}".format(now, msg))
+
+def printstatusFlush(msg):
+    '''
+    Prints current step in the workflow.
+    '''
+    now = time.asctime( time.localtime(time.time()) )
+    print("[{}]\t{}".format(now, msg), end="\r", flush=True)
 
 def reportProgress(current,total):
     return "Completed: {0}% ({1} out of {2})".format( str(round( (current / total) * 100, 2)), current, total)

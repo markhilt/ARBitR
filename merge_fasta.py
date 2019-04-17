@@ -325,6 +325,7 @@ def orient_scaffolds(scaffolds):
     for linked_tig_ID,tig_list in scaffolds.items():
         for idx, tig in enumerate(tig_list):
             if tig[-1] == "u":
+                #ipdb.set_trace()
                 if tig == tig_list[0]:
                     oriented_tig = orientByAlignmentFirst(  tig_list[idx], \
                                                             tig_list[idx+1])

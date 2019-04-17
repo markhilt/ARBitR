@@ -1,7 +1,22 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+.. module:: graph_building
+    :synopsis: graph_building describes the Linkgraph class and implements
+    functions related to graph building during the anvil pipeline.
+
+Copyright (c) 2019, Johannesson lab
+Licensed under the GPL3 license. See LICENSE file.
+"""
+
+import mappy as mp
+import numpy as np
+import pandas as pd
+
 import nuclseqTools as nt
 import calcESD as esd
 import misc
-import mappy as mp
 
 class Linkgraph:
     def __init__(self, nodes = [], edges = []):
@@ -156,7 +171,7 @@ class Linkgraph:
             1. More that one outgoing edge
             2. No outgoing edges
             If there is exactly one outgoing edge, the connected node has:
-            3. More than one incoming edges
+            3. More than one incoming edge
         '''
 
         if node not in self.nodes:
@@ -274,7 +289,7 @@ class Linkgraph:
     def findPath(self,starting_node):
         '''
         From the given node, traverses the graph in both directions until
-        it becomes impossible.
+        it becomes impossible to continue
         Returns every visited node in a list.
         '''
         visited = [starting_node] # Add starting node to list
@@ -381,83 +396,81 @@ def compareGEMlibs(lib1,lib2):
 
     # Find the fraction of shared barcodes, avoid division by 0
     if totallength != 0:
-        fraction = len(shared) / totallength
+        return len(shared) / totallength
     else:
-        fraction = 0
-
-    return fraction
+        return 0
 
 def pairwise_comparisons(GEMlist):
     '''
     Performs all pairwise comparisons between windows in GEMlist.
     '''
-    # Ccompare the barcodes in every region to all other regions
-    donewindows = 0
-    GEMcomparison = {}
+    # Compare the barcodes in every region to all other regions
+    GEMcomparison = pd.DataFrame(np.zeros(( len(GEMlist), len(GEMlist) )), \
+                                index=GEMlist.keys())
+    GEMcomparison.columns = GEMcomparison.index
 
-    # Iterate over the GEMlist dict
-    for region1, lib1 in GEMlist.items():
-        contig = region1[:-1]
+    # Iterate over rows in GEMcomparison
+    # Index to keep track of position so we can skip calculating some fractions
+    # twice
+    for idx, region1 in enumerate(GEMcomparison.index):
+        lib1 = GEMlist[region1]
 
         # Report progress every 20 windows
-        if donewindows in range(0,100000000,20):
-            misc.printstatus(misc.reportProgress(donewindows, len(GEMlist)))
+        if idx in range(0,100000000,20):
+            misc.printstatusFlush("[ BARCODE COMPARISON ]\t" + misc.reportProgress(idx+1, len(GEMlist)))
 
-        nested_dict = {} # Each entry in the original dictionary is another dictionary
+        fractions = [ compareGEMlibs(lib1,GEMlist[col]) for col in GEMcomparison.columns[idx:] ]
+        GEMcomparison.loc[region1][idx:] = fractions # Update row values from idx
+        GEMcomparison[region1][idx:] = fractions # Also update column values from idx
 
-        # Iterate over the GEMlist dict inside the loop
-        # This must be really inefficient...
-        for region2, lib2 in GEMlist.items():
-            fraction = compareGEMlibs(lib1,lib2) # Collect fraction of shared barcodes
-
-            # Fill the nested dictionary
-            nested_dict[region2] = fraction
-
-        donewindows += 1
-        GEMcomparison[region1] = nested_dict
+    misc.printstatus("[ BARCODE COMPARISON ]\t" + misc.reportProgress(idx+1, len(GEMlist)))
 
     return GEMcomparison
 
-def makeEdges(GEMcomparison, min_barcode_fraction):
-    # Next step is to create a graph in a dict format where the
-    # edges are based on outlying fraction values.
-    # If a certain window has an outlier to another window, an edge is
-    # created
 
-    donewindows = 0 # Reuse this variable to keep track of progress
+def makeEdges(GEMcomparison, min_barcode_fraction):
+    '''Create edges from the GEMcomparison array.
+
+    Args:
+        GEMcomparison (pandas DataFrame): All-against-all comparison of the
+            windows' barcodes. Columns = indices = window names. The dataframe
+            contains the fraction of shared barcodes between every window.
+        min_barcode_fraction (float): Minimum fraction of shared barcodes to
+            draw an edge in the Linkgraph.
+    Returns:
+        list: Edges inferred from the fractions of shared barcodes.
+
+    '''
+    donewindows = 0
     misc.printstatus("Number of windows: "+str(len(GEMcomparison)))
     edges = []
 
-    # Iterate over keys in GEMcomparison
-    for region, fractions in GEMcomparison.items():
+    # Iterate over rows in GEMcomparison
+    for region, fractions in GEMcomparison.iterrows():
         contig = region[:-1]
         window = region[-1]
 
         # Report progress every 100 windows
         if donewindows in range(0,10000000,100):
-            misc.printstatus(misc.reportProgress(donewindows, len(GEMcomparison)))
+            misc.printstatusFlush("[ BARCODE LINKING ]\t" + misc.reportProgress(donewindows, len(GEMcomparison)))
 
         # Calculate outliers from the comparisons of window k to all other windows
-        outliers = esd.getOutliers(fractions)
-        outliers_short = {}
+        # outliers is a dict where each key is a connected window to region,
+        # and value is the fraction is shared barcodes between region and window
+        outliers = esd.getOutliers_QC(np.array(fractions),GEMcomparison.columns,10)
 
-        # Remove fractions less than min_barcode_fraction (-f), including lower outliers
-        # and outliers with too few shared barcodes (-n)
-        for k,v in outliers.items():
-            if v > min_barcode_fraction:
-                outliers_short[k] = v
+        # If there are any outliers, i.e. edges to create, add them to the edges
+        # list. Don't add edges where the fraction is less than
+        # min_barcode_fraction (-f) and edges back to the same contig
+        if outliers != {}:
+            edges = edges + [   (region, connected_window, fraction) \
+                                for connected_window, fraction in outliers.items() \
+                                if (connected_window[:-1] != region[:-1] \
+                                and fraction > min_barcode_fraction)]
 
-        # Sort outliers_short dict by fraction value into the list sorted_outliers
-        # skip forming edges within the same contig
-        sorted_outliers = [(region, k, outliers_short[k]) \
-                            for k in sorted(outliers_short, \
-                                            key=outliers_short.get, \
-                                            reverse=True) \
-                            if region[:-1] != k[:-1]]
-
-        if sorted_outliers != []:
-            edges = edges + sorted_outliers
         donewindows += 1
+
+    misc.printstatus("[ BARCODE LINKING ]\t" + misc.reportProgress(donewindows, len(GEMcomparison)))
 
     return edges
 
@@ -495,23 +508,55 @@ def makeScaffolds(paths):
         nr += 1
     return scaffolds
 
-def main(contig_list, GEMlist, min_barcode_number, min_barcode_fraction):
+def filterGEMlist(contig_lengths, GEMlist, molecule_size):
+    '''Filters the GEMlist for contigs that are larger than molecule_size.
     '''
-    Controller for graph_building.
+    backbone_GEMlist = {}
+    for key, value in GEMlist.items():
+        if contig_lengths[key[:-1]] > molecule_size:
+            backbone_GEMlist[key] = value
+    return backbone_GEMlist
+
+def main(contig_lengths, GEMlist, molecule_size, min_barcode_number, min_barcode_fraction):
+    '''Controller for graph_building.
+
+    Args:
+        contig_lengths (dict): Contig names (keys) and their lengths (values)
+            from the input bam file.
+        GEMlist (dict): Windows corresponding to start and end regions
+            (size determined by -s) (keys) and the barcodes collected from
+            these regions (values).
+        molecule_size (int): Estimated molecule size that went into the
+            Chromium sequencing.
+        min_barcode_number (int): Minimum number of shared barcodes to draw
+            an edge in the Linkgraph.
+        min_barcode_fraction (float): Minimum fraction of shared barcodes to
+            draw an edge in the Linkgraph.
+    Returns:
+        Linkgraph: graph inferred from the input region barcodes.
+        dict: dictionary of new scaffold names and which input contigs
+            that should go into the new scaffold.
     '''
+
     # Collect the fraction of shared barcodes in the all-against-all
     # comparison of windows
     GEMcomparison = pairwise_comparisons(GEMlist)
 
     # Infer linkage based on statistically significant outliers determined
     # by the ESD test to build the graph
-    nodes = makeNodes(contig_list)
+    nodes = makeNodes(list(contig_lengths.keys()))
     edges = makeEdges(GEMcomparison, min_barcode_fraction)
     graph = Linkgraph(nodes, edges)
+
+    # In dev:
+    # Create backbone graph where contigs shorter than molecule size are ignored
+    # First filter GEMlist to remove these contigs
+    #backbone_GEMlist = filterGEMlist(contig_lengths, GEMlist, molecule_size)
+    #backbone_GEMcomparison = pairwise_comparisons(backbone_GEMlist)
+    #edges = makeEdges(backbone_GEMcomparison, min_barcode_fraction)
+    #graph = Linkgraph(nodes, edges)
+
     paths = unambiguousPaths(graph) # Determine unambiguous paths
     scaffolds = makeScaffolds(paths)
-
-    #for k,v in scaffolds.items():
-    #    print(k,v)
 
     return graph, scaffolds

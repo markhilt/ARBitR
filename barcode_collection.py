@@ -1,3 +1,15 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+.. module:: barcode_collection
+    :synopsis: barcode_collection implements methods to search the input
+    bam file for reads and extract their barcodes.
+
+Copyright (c) 2019, Johannesson lab
+Licensed under the GPL3 license. See LICENSE file.
+"""
+
 import numpy as np
 import pysam
 from scipy.stats import t
@@ -18,67 +30,38 @@ def collectGEMs(window, mapq):
 
     return BC_list
 
-def getWindows(contig, region_size, contig_dict):
+def getWindows(contig, region_size, contig_length):
     '''
     To split up the contig into windows
     '''
-    length = contig_dict[contig]
     start = (0,region_size)
 
     # If contig is shorter than region_size, just take all of it to "end" as well
-    if (length - region_size) < 0:
+    if (contig_length - region_size) < 0:
         endstart = 0
     else:
-        endstart = length - region_size
-    end = (endstart,length)
+        endstart = contig_length - region_size
+    end = (endstart,contig_length)
     return [start,end]
 
-def reportProgress(current,total):
-    return "Completed: {0}% ({1} out of {2})".format( str(round( (current / total) * 100, 2)), current, total)
-
-
-### CHECK WHERE IN USE
-def countReads(contig,coords_to_check):
-    '''
-    To count the number of reads aligned to a region
-    '''
-    cov_arr = samfile.count_coverage(contig, coords_to_check[0],coords_to_check[1])
-    cov = sum([sum(cov_arr[x]) for x in range(0,4,1)]) / 50
-    return cov
-
-def formatContigs(samfile):
-    '''
-    Creates a dict where keys are contig names and values their lengths
-    '''
-    i = 0
-    gfa_header = []
-    contig_dict = {}
-    contig_list = samfile.references
-    while i < len(contig_list):
-        contig_dict[contig_list[i]] = samfile.lengths[i]
-        gfa_header.append("S\t{0}\t*\tLN:i:{1}".format(contig_list[i],samfile.lengths[i]))
-        i += 1
-
-    return contig_dict, gfa_header
-
-def main(input_bam, region_size, mapq):
+def main(input_bam, region_size, mapq, contig_dict):
     global samfile
     samfile = pysam.AlignmentFile(input_bam, "rb")
-    contig_dict, gfa_header = formatContigs(samfile)
     GEMlist = {} # Inappropriately named "list"
 
     # First step is to collect all barcodes (passing -q cutoff) that are aligned
     # to each contigs first and last regions (-l)
-    misc.printstatus("Starting barcode collection. Found {0} contigs.".format(len(contig_dict)))
+    misc.printstatus("Starting barcode collection. Found {0} contigs.".format(len(contig_dict.keys())))
     donecontigs = 0
     for contig in contig_dict:
 
         # Report progress every 20 windows
         if donecontigs in range(0,100000000,20):
-            misc.printstatus("[ BARCODE COLLECTION ]\t"+reportProgress(donecontigs, len(contig_dict)))
+            misc.printstatusFlush("[ BARCODE COLLECTION ]\t"+misc.reportProgress(donecontigs, len(contig_dict.keys())))
 
-        # Create windows from first and last X kb from each contig
-        windowlist = getWindows(contig, region_size, contig_dict)
+        # Collect the barcodes from the start and end of contig and
+        # put them into the GEMlist dict
+        windowlist = getWindows(contig, region_size, contig_dict[contig])
 
         # Collect barcodes from every window
         for window in windowlist:
@@ -94,6 +77,8 @@ def main(input_bam, region_size, mapq):
 
         donecontigs += 1
 
+    misc.printstatus("[ BARCODE COLLECTION ]\t"+misc.reportProgress(donecontigs, len(contig_dict.keys())))
+
     samfile.close()
 
-    return GEMlist, gfa_header
+    return GEMlist

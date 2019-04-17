@@ -10,19 +10,19 @@ E-mail: markus.hiltunen@ebc.uu.se
 Description: Controller of the AnVIL script collection. This script controls the
 parameters and workflow of AnVIL.
 
-LICENSING
+Copyright (c) 2019, Johannesson lab
+Licensed under the GPL3 license. See LICENSE file.
 """
+
+import time
+import os
 
 import argparse
 import numpy as np
 import pysam
 from scipy.stats import t
-import time
-import os
 
-# Included modules
 import formatting_tools
-#import validate_runner
 import graph_building
 import barcode_collection
 import misc
@@ -47,6 +47,12 @@ parser.add_argument("-s","--region_size", \
                     help="Size of region of contig start and end to collect \
                     barcodes from. [20000]", \
                     default = 20000, \
+                    type = int)
+parser.add_argument("-m","--molecule_size", \
+                    help="Estimated mean molecule size that went into Chromium \
+                    sequencing. Linked reads spanning a distance larger than \
+                    this size should be rare. [45000]", \
+                    default = 45000, \
                     type = int)
 parser.add_argument("-n","--barcode_number", \
                     help="Minimum number of shared barcodes to create link. [1]", \
@@ -76,6 +82,21 @@ def getOut():
     else:
         outfilename = args.input_bam.split(".bam")[0]+".anvil"
     return outfilename
+
+def formatContigs(samfile):
+    '''
+    Creates a dict where keys are contig names and values their lengths
+    '''
+    i = 0
+    gfa_header = []
+    contig_dict = {}
+    contig_list = samfile.references
+    while i < len(contig_list):
+        contig_dict[contig_list[i]] = samfile.lengths[i]
+        gfa_header.append("S\t{0}\t*\tLN:i:{1}".format(contig_list[i],samfile.lengths[i]))
+        i += 1
+
+    return contig_dict, gfa_header
 
 def writeGfa(outfilename, gfa_header, graph):
     '''
@@ -125,6 +146,8 @@ def main():
     global input_contigs
     samfile = pysam.AlignmentFile(args.input_bam, "rb")
     input_contigs = samfile.references
+    input_contig_lengths, gfa_header = formatContigs(samfile)
+
     samfile.close()
 
     # If user provided a paths file, skip graph building and jump straight to
@@ -132,21 +155,21 @@ def main():
     if not args.input_paths:
         # First step is to do the initial check through of the bam file,
         # to find any region where there is a reduction in barcode continuity
-        misc.printstatus("Searching input bam file for suspicious regions: {}".format(args.input_bam))
+        # misc.printstatus("Searching input bam file for suspicious regions: {}".format(args.input_bam))
         #suspicious_regions = validate_runner.main(args.input_bam)
 
         # Second step is to collect the barcodes from the input bam file
         misc.printstatus("Collecting barcodes.")
-        GEMlist, gfa_header = barcode_collection.main(  args.input_bam, \
-                                                        args.region_size, \
-                                                        args.mapq)
-        # Also add the suspicious region's barcodes
-        # TODO
+        GEMlist = barcode_collection.main(  args.input_bam, \
+                                            args.region_size, \
+                                            args.mapq, \
+                                            input_contig_lengths)
 
         # Third step is to build the link graph based on the barcodes
         misc.printstatus("Creating link graph.")
-        graph, paths = graph_building.main(input_contigs, \
+        graph, paths = graph_building.main(input_contig_lengths, \
                                         GEMlist, \
+                                        args.molecule_size, \
                                         args.barcode_number, \
                                         args.barcode_fraction)
 
@@ -156,6 +179,7 @@ def main():
         writePaths(outfilename, paths)
 
     else:
+        # If user provided a paths file, skip barcode collection and graph building
         if os.path.isfile(args.input_paths):
             misc.printstatus("Found input paths file: ".format(args.input_paths))
             misc.printstatus("Using this to create scaffolds.")

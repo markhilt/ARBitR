@@ -11,11 +11,11 @@ def esd_critical(alpha, n, i):
     ret = (t_ppr * (n-i)) / np.sqrt( (n - i - 1 + t_ppr**2) * (n-i+1) )
     return(ret)
 
-def getOutliers_QC(fracs,i,r):
+def getOutliers_QC(fracs,windows,r):
     '''
     Calculate outlying fractions with an ESD test.
     fracs is a numpy array containing fraction values to be searched for outliers.
-    i is a list of the regions in order of appearance in fracs. r is the number of
+    windows is a list of the windows in order of appearance in fracs. r is the number of
     values to remove (i.e. outliers to consider)
     '''
     # Start by collecting all fractions
@@ -24,7 +24,6 @@ def getOutliers_QC(fracs,i,r):
     tokeep = None
     y = fracs
     y2 = y
-    ks = i
     outl = {} # dict to collect output
 
     ## Compute test statistic until r values have been
@@ -50,10 +49,9 @@ def getOutliers_QC(fracs,i,r):
         index = np.where(val1 >= val2)
         index = index[0].tolist()
 
-
         # Go back to original array and collect values of interest
         for ind in index:
-            outl[ ks[ind] ] = fracs[ind]
+            outl[ windows[ind] ] = fracs[ind]
 
     return outl
 
