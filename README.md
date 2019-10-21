@@ -5,16 +5,16 @@ Script collection for merging/scaffolding of genome assemblies using 10X Chromiu
 
 ## Dependencies
 - Python3
-- [numpy](https://pypi.org/project/mappy/)
-- [scipy](https://pypi.org/project/mappy/)
-- [pandas](https://pypi.org/project/mappy/)
-- [Pysam](https://github.com/pysam-developers/pysam)
+- [numpy](https://numpy.org/)
+- [scipy](https://www.scipy.org/)
+- [pandas](https://pandas.pydata.org/)
+- [Pysam](https://pysam.readthedocs.io/en/latest/api.html)
 - [Mappy](https://pypi.org/project/mappy/)
 
 ## Summary
 AnVIL is used for merging and scaffolding an existing genome assembly. It takes a position sorted read alignment file in the bam/sam format with 10X Chromium barcodes in the BX tag, and if additionally provided with the genome fasta file used for mapping, it will sort and merge the provided contigs into scaffolds. A key functionality is the possibility to resolve links between contigs by overlap-layout-consensus (OLC) instead of just inserting a gap between them.
 
-AnVIL was developed for application on small genomes that have been assembled using long-read sequencing and an OLC method. Ideally, the genome size is <1Gb and the number of input contigs is <10000, though it may also be useful in other cases. E.g. it can additionally scaffold [Supernova]() assemblies of pure 10X Chromium data.
+AnVIL was developed for application on small genomes that have been assembled using long-read sequencing and an OLC method. Ideally, the genome size is <1Gb and the number of input contigs is <10000, though it may also be useful in other cases. E.g. it can additionally scaffold [Supernova](https://github.com/10XGenomics/supernova) assemblies of pure 10X Chromium data.
 
 ### Example usage:
 ```

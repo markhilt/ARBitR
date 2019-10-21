@@ -18,6 +18,49 @@ import nuclseqTools as nt
 import calcESD as esd
 import misc
 
+class Junction:
+    '''
+    This class describes an AnVIL "junction". This is a part of a Linkgraph path
+    where there is a known start and target node and their orientations are known.
+    Then there can be one or more connected nodes of unknown orientation.
+    '''
+    def __init__(self, start_node, target_node, connected = [], barcodes = {}):
+        self.start = start_node # Name of starting contig
+        self.target = target_node # Name of target contig
+        self.connections = connected # List of names of connected contigs
+        self.barcodes = barcodes # Set of barcodes
+
+    def __repr__(self):
+        return "start: {0}, target: {1}, connections: {2}".format(self.start, self.target, self.connections)
+
+    def __str__(self):
+        return "Junction([{0},{1},{2}])".format(self.start, self.target, self.connections)
+
+    def start():
+        '''Returns starting node and orientation.
+        '''
+        return self.start
+
+    def target():
+        '''Returns target node and orientation.
+        '''
+        return self.target
+
+    def connections():
+        '''Return connections.
+        '''
+        return self.connections
+
+    def barcodes():
+        '''Returns barcodes.
+        '''
+        return self.barcodes
+
+    def addConnection(node):
+        '''Adds node to the list of connections.
+        '''
+        self.connections.append(node)
+
 class Linkgraph:
     def __init__(self, nodes = [], edges = []):
         '''
@@ -30,10 +73,14 @@ class Linkgraph:
 
         '''
         self.nodes = nodes  # [node1, node2, ...]
-        # [(node1, node2, weight), (node1, node3, weight), ...] i.e. node1->node2 etc
+
         # Draw edges in both directions
-        # self.edges = edges
+        # [(node1, node2, set(node1 barcodes), set(node1 barcodes)), ...] i.e. node1->node2 etc
         self.edges = list(set(edges + [(a[1], a[0], a[2]) for a in edges]))
+        self.paths = [] # Paths as lists of junctions
+
+    def __str__(self):
+        return "Linkgraph([nodes: {0},edges: {1}])".format(len(self.nodes), len(self.edges))
 
     def addNode(node):
         '''
@@ -77,19 +124,9 @@ class Linkgraph:
             opposite = "u"
         return "".join([tig,opposite])
 
-    def findConnections(self,node):
-        '''
-        Returns all nodes connected to the given node.
-        '''
-        connected_nodes = []
-        for e in self.edges:
-            if e[0] == node:
-                connected_nodes.append(e[1])
-        return connected_nodes
-
     def getEdges(self,node):
         '''
-        Returns all outgoing edges from the to the given node.
+        Returns all outgoing edges from the given node.
         '''
         outgoing_edges = []
         for e in self.edges:
@@ -97,81 +134,31 @@ class Linkgraph:
                 outgoing_edges.append(e)
         return outgoing_edges
 
-    def bestOrientation(self, middle_tig, starting_node_outgoing_edges, target_node_outgoing_edges):
+    def getNodes(self,node):
         '''
-        Short contigs are often connected to both sides, i.e. both nodes
-        of the contig have edges to two other nodes. In these cases,
-        determine the orientation of the middle contig by the fraction weight
-        to each connected node.
+        Returns all connected nodes to the given node.
         '''
-        path = []
-        cutoff = 1.5
-        #ipdb.set_trace()
-
-        # We need to make four comparisons, between the right edges and the
-        # left edges. Hopefully the weights support the same path.
-        # Arbitrarily choose 50% difference as a cutoff, i.e. if one weight
-        # is more than 50% higher, choose that one.
-        starting_node = starting_node_outgoing_edges[0][0]
-        target_node = target_node_outgoing_edges[0][0]
-
-        starting_node_to_middle_tig_edges = \
-        [a for a in starting_node_outgoing_edges if a[1][:-1] == middle_tig]
-        target_node_to_middle_tig_edges = \
-        [a for a in target_node_outgoing_edges if a[1][:-1] == middle_tig]
-
-        left_edge1_node2 = starting_node_to_middle_tig_edges[0][1]
-        left_edge1_weight = starting_node_to_middle_tig_edges[0][2]
-        left_edge2_node2 = starting_node_to_middle_tig_edges[1][1]
-        left_edge2_weight = starting_node_to_middle_tig_edges[1][2]
-
-        right_edge1_node2 = target_node_to_middle_tig_edges[0][1]
-        right_edge1_weight = target_node_to_middle_tig_edges[0][2]
-        right_edge2_node2 = target_node_to_middle_tig_edges[1][1]
-        right_edge2_weight = target_node_to_middle_tig_edges[1][2]
-
-        # We have two possible choices for the path.
-        # It always starts at starting_node (which we wont return as we already know this)
-        # and ends at target_node. Question is the orientation of the middle
-        # contig.
-        if left_edge1_weight > cutoff * left_edge2_weight:
-            if right_edge1_weight > cutoff * right_edge2_weight \
-            and left_edge1_node2 != right_edge1_node2:
-                path.append(left_edge1_node2)
-                path.append(right_edge1_node2)
-                path.append(target_node)
-
-            elif right_edge2_weight > cutoff * right_edge1_weight \
-            and left_edge1_node2 != right_edge2_node2:
-                path.append(left_edge1_node2)
-                path.append(right_edge2_node2)
-                path.append(target_node)
-
-        elif left_edge2_weight > cutoff * left_edge1_weight:
-            if right_edge1_weight > cutoff * right_edge2_weight \
-            and left_edge2_node2 != right_edge1_node2:
-                path.append(left_edge2_node2)
-                path.append(right_edge1_node2)
-                path.append(target_node)
-
-            elif right_edge2_weight > cutoff * right_edge1_weight \
-            and left_edge2_node2 != right_edge2_node2:
-                path.append(left_edge2_node2)
-                path.append(right_edge2_node2)
-                path.append(target_node)
-
-        return path
+        connected_nodes = []
+        for e in self.edges:
+            if e[0] == node:
+                connected_nodes.append(e[1])
+        return connected_nodes
 
     def extend(self,node):
         '''
         Returns a connected node to the given node, if there is
-        an unambiguous connection.
-        Ambiguous connections include:
-            From starting node:
-            1. More that one outgoing edge
-            2. No outgoing edges
-            If there is exactly one outgoing edge, the connected node has:
-            3. More than one incoming edge
+        an unambiguous connection. The connected node must have
+        no other incoming edges.
+        There are three possibilities:
+        1. One outgoing edge.
+        2. Two outgoing edges to s and e of the same contig.
+        3. Three outgoing edges, two to s and e of the same contig and
+        one to an additional node.
+
+        Returns:
+            Junction: If a single good connection is found, returns a junction
+                describing this.
+            None: if no good connection is found.
         '''
 
         if node not in self.nodes:
@@ -179,58 +166,42 @@ class Linkgraph:
 
         else:
             # Edges are ordered, so we move from left to right along the edge
-            connections = self.findConnections(node)
+            connections = self.getNodes(node)
 
             # If only one outgoing edge, we continue to check the connected node
             # for a single edge back to the original node
-            if len(connections) == 1:
-                if len(self.findConnections(connections[0])) == 1:
-                    # If so, we have found an unambigous connection and can return it
-                    return connections
+            if len(connections) == 1 and len(self.getNodes(connections[0])) == 1:
+                return Junction(node, connections[0], [], GEMs[node]|GEMs[connections[0]])
 
-            # Now it starts getting complicated. Sometimes short contigs are connected
-            # at both nodes to two different nodes. In these cases, use the weight
-            # to determine the path.
-            # Check that there are two connections, and that they are to the same contig
             elif len(connections) == 2 and connections[0][:-1] == connections[1][:-1]:
-                # If true, also check that both connected nodes have four edges,
-                # one back at each side, and one continuing on each side to another node
-                middle_ctg = connections[0][:-1]
-                conn1 = self.findConnections(connections[0])
-                conn2 = self.findConnections(connections[1])
-                if len(conn1) == 2 and len(conn2) == 2:
-                    if node in conn1 and node in conn2:
-                        conn1.remove(node)
-                        conn2.remove(node)
+                # If there are two outgoing edges to the same contig,
+                # check if there is anywhere to continue to. If not, return
+                # outgoing_edges
+                if len(self.getNodes(connections[0])) == 1 \
+                and len(self.getNodes(connections[1])) == 1:
+                    return Junction(node,None, [connections[0][:-1]], GEMs[node])
 
-                        # If the other connected node is the same,
-                        # and has no other incoming edges
-                        if conn1 == conn2:
-                            third_node_connections = self.findConnections(conn1[0])
-                            if len(third_node_connections) == 2:
-                                # Success. Check orientation
-                                ori = self.bestOrientation( middle_ctg, \
-                                                            self.getEdges(node), \
-                                                            self.getEdges(conn1[0]))
-                                if ori != None:
-                                    return ori
-                                else:
-                                    # If orientation cannot be found from the
-                                    # weight, keep the contig in unknown
-                                    # orientation for later to try to
-                                    # orient it using overlaps
-                                    return [connections[0][:-1]+"u", \
-                                            connections[0][:-1]+"u", \
-                                            conn1]
+                elif len(self.getNodes(connections[0])) == 2 \
+                and len(self.getNodes(connections[1])) == 2:
+                    # If there are two outgoing edges from both,
+                    # check that both connected nodes have two edges,
+                    # one back at each side, and one continuing on each side to another node
+                    middle_ctg = connections[0][:-1]
+                    conn1_nodes = self.getNodes(connections[0])
+                    conn2_nodes = self.getNodes(connections[1])
 
+                    if len(conn1_nodes) == 2 and set(conn1_nodes) == set(conn2_nodes):
+                        conn1_nodes.remove(node)
+                        third_node_connections = self.getNodes(conn1_nodes[0])
+                        if len(third_node_connections) == 2:
+                            return Junction(node, conn1_nodes[0], [middle_ctg], GEMs[node]|GEMs[conn1_nodes[0]])
 
             # A third possibility exists: the same as above, but another edge also
             # exists between the starting and target nodes. There are thus 3
             # connections, out of which two are to the same contig (middle).
             elif len(connections) == 3 and len(set( [c[:-1] for c in connections] )) == 2:
 
-                # If true, find which two are to opposite ends of the same contig
-                # Three possibilities exist...
+                # Find which two are to opposite ends of the same contig
                 if connections[0][:-1] == connections[1][:-1]:
                     middle_ctg = connections[0][:-1]
                     middle_ctg_node1 = connections[0]
@@ -248,9 +219,9 @@ class Linkgraph:
                     target_node = connections[0]
 
                 # collect the connections from the connected nodes
-                middle_ctg_node1_conn = self.findConnections(middle_ctg_node1)
-                middle_ctg_node2_conn = self.findConnections(middle_ctg_node2)
-                target_node_conn = self.findConnections(target_node)
+                middle_ctg_node1_conn = self.getNodes(middle_ctg_node1)
+                middle_ctg_node2_conn = self.getNodes(middle_ctg_node2)
+                target_node_conn = self.getNodes(target_node)
 
                 # We need to check these for other outgoing edges...
                 # Only accept edges back to these same nodes
@@ -265,65 +236,27 @@ class Linkgraph:
                     and node in target_node_conn \
                     and middle_ctg_node1 in target_node_conn \
                     and middle_ctg_node2 in target_node_conn:
+                        return Junction(node, target_node, [middle_ctg], GEMs[node]|GEMs[target_node])
 
-                        # Success. Try to find orientation
-                        # Get rid of the edges between starting_node
-                        # and target_node, then use the same function as before
-                        ori = self.bestOrientation( middle_ctg, \
-                                                    self.getEdges(node), \
-                                                    self.getEdges(target_node))
-
-                        if ori != []:
-                            return ori
-                        else:
-                            # If orientation cannot be found from the
-                            # weight, keep the contig in unknown
-                            # orientation for later to try to
-                            # orient it using overlaps
-                            return [middle_ctg_node1[:-1]+"u", \
-                                    middle_ctg_node1[:-1]+"u", \
-                                    target_node]
         return None
-
 
     def findPath(self,starting_node):
         '''
         From the given node, traverses the graph in both directions until
         it becomes impossible to continue
-        Returns every visited node in a list.
+        Returns:
+            list: crossed junctions in a list.
         '''
         visited = [starting_node] # Add starting node to list
         node = None
+        path = []
 
-        def assessExtension(extension, side):
-            '''
-            Nested function to check list of path extension
-            '''
-            nonlocal visited
-
-            if len(extension) == 1:
-                node = extension[0]
-
-            # The function extend should have already checked that
-            # the 3 connections are traverseable
-            elif len(extension) == 3:
-                 # If extension to the right
-                if side == "r":
-                    visited = visited + extension[:2]
-                    node = extension[2]
-
-                # If extension to the left
-                elif side == "l":
-                    extension.reverse()
-                    visited = extension[1:] + visited
-                    node = extension[0]
-            else:
-                node = None
-            return node
-
-        ext = self.extend(starting_node) # Go to next node
-        if ext != None:
-            node = assessExtension(ext, "r")
+        ext = self.extend(starting_node) #
+        # Avoid extensions looping back to the same contig
+        if ext != None and ext.target != None:
+            if ext.target[:-1] != ext.start[:-1]:
+                path.append(ext)
+                node = ext.target
 
         # If there is a next node...
         while node != None:
@@ -337,19 +270,22 @@ class Linkgraph:
             ext = self.extend(node) # Go to next node
 
             if ext != None:
-                node = assessExtension(ext, "r")
+                node = ext.target
+                path.append(ext)
+
             else:
                 node = None
 
         # At this point we have reached the end of the right extension
         # Now do the same in the other direction
-        node = self.opposite(starting_node)
-        visited.insert(0, node) # Insert at the beginning of the visited list
-        ext = self.extend(node) # Grab next nodes
-        if ext != None:
-            node = assessExtension(ext, "l")
-        else:
-            node = None
+        node = None
+        starting_node = self.opposite(starting_node)
+        visited.insert(0, starting_node) # Insert at the beginning of the visited list
+        ext = self.extend(starting_node) # Grab next nodes
+        if ext != None and ext.target != None:
+            if ext.target[:-1] != ext.start[:-1]:
+                path.insert(0, Junction(ext.target,ext.start,ext.connections, GEMs[ext.target]|GEMs[ext.start]))
+                node = ext.target
 
         while node != None:
             visited.insert(0, node) # Add this node to list
@@ -360,38 +296,47 @@ class Linkgraph:
             visited.insert(0, node) # Add this node to list
             ext = self.extend(node) # Go to next node
             if ext != None:
-                node = assessExtension(ext, "l")
+                if ext.target != None:
+                    node = ext.target
+                    path.insert(0, Junction(ext.target,ext.start,ext.connections, GEMs[ext.target]|GEMs[ext.start]))
+                else:
+                    node = ext.target
+                    path.insert(0, Junction(ext.target,ext.start,ext.connections, GEMs[ext.start]))
             else:
                 node = None
 
-        return visited
+        return path
 
-
-def unambiguousPaths(linkgraph):
-    '''
-    Returns all unambiguous paths in the graph, i.e. paths with a single
-    edge connecting every node in the path.
-    '''
-    visited_nodes = []
-    paths = []
-    for n in linkgraph.nodes:
-        if n not in visited_nodes:
-            path = linkgraph.findPath(n)
-            paths.append(path)
-            visited_nodes = visited_nodes + path
-
-    return paths
+    def unambiguousPaths(self):
+        '''
+        Append all unambiguous paths in the graph, i.e. paths with a single
+        edge connecting every node in the path.
+        '''
+        visited_nodes = []
+        for n in self.nodes:
+            if n not in visited_nodes:
+                path = self.findPath(n)
+                if path != []:
+                    self.paths.append(path)
+                    visited_nodes = visited_nodes + \
+                                    [ junc.start for junc in path ] + \
+                                    [ junc.target for junc in path ]
+                    # Also append starting and ending points
+                    if path[0].start != None:
+                        visited_nodes.append(self.opposite(path[0].start))
+                    if path[-1].target != None:
+                        visited_nodes.append(self.opposite(path[-1].target))
 
 def makeNodes(contig_list):
     return [a+"s" for a in contig_list] + [a+"e" for a in contig_list]
 
-
 def compareGEMlibs(lib1,lib2):
     '''
-    Compares two lists of barcodes, collects all shared ones and
+    Compares two sets of barcodes, collects all shared ones and
     counts them. Returns fraction of shared barcodes.
     '''
-    shared = set(lib1).intersection(lib2) # Find shared ones
+    # Find shared ones. Numpy arrays were tried here - way slower
+    shared = lib1.intersection(lib2)
     totallength = len(lib1) + len(lib2) - len(shared) # Total number of unshared barcodes
 
     # Find the fraction of shared barcodes, avoid division by 0
@@ -412,6 +357,7 @@ def pairwise_comparisons(GEMlist):
     # Iterate over rows in GEMcomparison
     # Index to keep track of position so we can skip calculating some fractions
     # twice
+    idx = 0
     for idx, region1 in enumerate(GEMcomparison.index):
         lib1 = GEMlist[region1]
 
@@ -427,7 +373,140 @@ def pairwise_comparisons(GEMlist):
 
     return GEMcomparison
 
+"""
+def pairwise_comparisons(GEMlist):
+    '''
+    Performs all pairwise comparisons between windows in GEMlist.
+    '''
+    # Compare the barcodes in every region to all other regions
+    GEMcomparison = {} # Dict of the structure { str(region): pd.Series(fractions, index = other_regions) }
+    comp = {}
 
+    # Iterate over GEMlist
+    idx = 0
+
+    import itertools
+    for reg1, reg2 in itertools.combinations(GEMlist.items(), 2):
+        if idx in range(0,100000000,2000):
+            misc.printstatusFlush("[ BARCODE COMPARISON ]\t" + misc.reportProgress(idx+1, (len(GEMlist)*len(GEMlist))/2))
+        idx += 1
+
+        frac = compareGEMlibs(reg1[1],reg2[1])
+
+        # Add both directions
+        if reg1[0] in comp.keys():
+            comp[reg1[0]].append((reg2[0], frac))
+        else:
+            comp[reg1[0]] = [(reg2[0], frac)]
+        if reg2[0] in comp.keys():
+            comp[reg2[0]].append((reg1[0], frac))
+        else:
+            comp[reg2[0]] = [(reg1[0], frac)]
+
+    for k,v in comp.items():
+        regions, fractions = zip(*[(i[0], i[1]) for i in v])
+        GEMcomparison[k] = pd.Series(np.array(fractions), index = regions)
+
+    misc.printstatus("[ BARCODE COMPARISON ]\t" + misc.reportProgress(idx+1, (len(GEMlist)*len(GEMlist))/2))
+
+    return GEMcomparison
+
+
+def compare(arg):
+    reg1, reg2 = arg[0][0], arg[1][0]
+    bc1, bc2 = arg[0][1], arg[1][1]
+    frac = compareGEMlibs(bc1, bc2)
+    GEMcomparison[reg1][reg2] = frac
+    GEMcomparison[reg2][reg1] = frac
+
+def pairwise_comparisons(GEMlist):
+    '''
+    Performs all pairwise comparisons between windows in GEMlist.
+    '''
+    # Compare the barcodes in every region to all other regions
+    # Initiate matrix
+    idx = list(GEMlist.keys())
+    l = len(GEMlist)
+    global GEMcomparison
+    GEMcomparison = pd.DataFrame(np.zeros((len(idx), len(idx))), index = idx)
+    GEMcomparison.columns = GEMcomparison.index
+
+    # Iterate over GEMlist
+    idx = 0
+
+    # Create pool from columns of GEMcomparison
+    import multiprocessing
+    import itertools
+    import tqdm
+
+    combs = itertools.combinations(GEMlist.items(), 2)
+    n_processes = 48
+    #n_combs = len(list(combs)) do NOT use this: it wrecks the combs generator
+    # for some reason
+    # Calculate expected length of combs:
+    import math
+    n_combs = math.factorial(len(GEMlist.keys())) // math.factorial(2) // \
+            math.factorial(len(GEMlist.keys())-2)
+
+
+    #GEMcomparison = {k:{} for k in GEMlist.keys() } # Testing nested dict instead
+    #GEMcomparison = {k:pd.Series(np.zeros(len(GEMlist.keys())), index = GEMlist.keys()) for k in GEMlist.keys() } # Dict of pd.Series
+    print("starting mp")
+    print("# comparisons to make: {}, split across {} processes".format(n_combs, n_processes))
+    with multiprocessing.Pool(n_processes) as p:
+        for _ in tqdm.tqdm(p.imap_unordered(compare, combs, chunksize = 50), total = n_combs):
+            pass
+    print("mp done")
+    #179087275 16836
+
+    return GEMcomparison
+"""
+
+def makeEdges(GEMcomparison, min_barcode_fraction):
+    '''Create edges from the GEMcomparison dict.
+
+    Args:
+        GEMcomparison (dict): All-against-all comparison of the
+            windows' barcodes.
+        min_barcode_fraction (float): Minimum fraction of shared barcodes to
+            draw an edge in the Linkgraph.
+    Returns:
+        list: Edges inferred from the fractions of shared barcodes.
+
+    '''
+    misc.printstatus("Number of windows: "+str(len(GEMcomparison.keys())))
+    edges = []
+
+    # Iterate over rows in GEMcomparison
+    for idx, (region, fractions) in enumerate(GEMcomparison.items()):
+        contig = region[:-1]
+        window = region[-1]
+
+        # Report progress every 100 windows
+        if idx in range(0,10000000,100):
+            misc.printstatusFlush("[ BARCODE LINKING ]\t" + misc.reportProgress(idx, len(GEMcomparison)))
+
+        # Calculate outliers from the comparisons of window k to all other windows
+        # outliers is a dict where each key is a connected window to region,
+        # and value is the fraction is shared barcodes between region and window
+        outliers = esd.getOutliers_QC(np.array(fractions),fractions.index,10)
+
+        # If there are any outliers, i.e. edges to create, add them to the edges
+        # list. Don't add edges for lower outliers (fractions < mean(fractions))
+        # or where the fraction is less than
+        # min_barcode_fraction (-f) and edges back to the same contig
+        if len(outliers.keys()) > 0:
+            edges = edges + [   (region, connected_window, fraction) \
+                                for connected_window, fraction in outliers.items() \
+                                if (connected_window[:-1] != region[:-1] ) \
+                                and fraction > np.mean(fractions)]
+
+    misc.printstatus("[ BARCODE LINKING ]\t" + misc.reportProgress(len(GEMcomparison), len(GEMcomparison)))
+
+    return edges
+
+"""
+########### Deprecated
 def makeEdges(GEMcomparison, min_barcode_fraction):
     '''Create edges from the GEMcomparison array.
 
@@ -457,67 +536,37 @@ def makeEdges(GEMcomparison, min_barcode_fraction):
         # Calculate outliers from the comparisons of window k to all other windows
         # outliers is a dict where each key is a connected window to region,
         # and value is the fraction is shared barcodes between region and window
-        outliers = esd.getOutliers_QC(np.array(fractions),GEMcomparison.columns,10)
+
+        # Try to get rid of 0's,
+        # could possibly speed up
+        # FOr now in two steps
+        columns = [ GEMcomparison.columns[i] for i, val in enumerate(fractions) if val != 0 ]
+        fractions = list(filter(lambda a: a != 0, fractions))
+
+
+        #outliers = esd.getOutliers_QC(np.array(fractions),GEMcomparison.columns,10)
+        outliers = esd.getOutliers_QC(np.array(fractions),columns,10)
 
         # If there are any outliers, i.e. edges to create, add them to the edges
         # list. Don't add edges where the fraction is less than
         # min_barcode_fraction (-f) and edges back to the same contig
-        if outliers != {}:
+        if len(outliers.keys()) > 1:
             edges = edges + [   (region, connected_window, fraction) \
                                 for connected_window, fraction in outliers.items() \
                                 if (connected_window[:-1] != region[:-1] \
                                 and fraction > min_barcode_fraction)]
 
         donewindows += 1
+        #ipdb.set_trace()
+
 
     misc.printstatus("[ BARCODE LINKING ]\t" + misc.reportProgress(donewindows, len(GEMcomparison)))
 
     return edges
+"""
 
-def makeScaffolds(paths):
-    '''
-    Given a list of paths, determines orientation of contigs.
-    '''
-    scaffolds = {}
-    nr = 1
-    for p in paths:
-        linked_scaffold_name = "scaffold_{}".format(str(nr))
-        # Check every other node to get contig and orientation
-        for c in p[1::2]:
-            tig = c[:-1]
-            orientation = c[-1]
 
-            if orientation == "e":
-                if linked_scaffold_name not in scaffolds:
-                    scaffolds[linked_scaffold_name] = [tig+"f"]
-                else:
-                    scaffolds[linked_scaffold_name].append(tig+"f")
-
-            elif orientation == "s":
-                if linked_scaffold_name not in scaffolds:
-                    scaffolds[linked_scaffold_name] = [tig+"r"]
-                else:
-                    scaffolds[linked_scaffold_name].append(tig+"r")
-
-            elif orientation == "u":
-                if linked_scaffold_name not in scaffolds:
-                    scaffolds[linked_scaffold_name] = [tig+"u"]
-                else:
-                    scaffolds[linked_scaffold_name].append(tig+"u")
-
-        nr += 1
-    return scaffolds
-
-def filterGEMlist(contig_lengths, GEMlist, molecule_size):
-    '''Filters the GEMlist for contigs that are larger than molecule_size.
-    '''
-    backbone_GEMlist = {}
-    for key, value in GEMlist.items():
-        if contig_lengths[key[:-1]] > molecule_size:
-            backbone_GEMlist[key] = value
-    return backbone_GEMlist
-
-def main(contig_lengths, GEMlist, molecule_size, min_barcode_number, min_barcode_fraction):
+def main(contig_lengths, GEMlist, min_barcode_number, min_barcode_fraction):
     '''Controller for graph_building.
 
     Args:
@@ -526,8 +575,6 @@ def main(contig_lengths, GEMlist, molecule_size, min_barcode_number, min_barcode
         GEMlist (dict): Windows corresponding to start and end regions
             (size determined by -s) (keys) and the barcodes collected from
             these regions (values).
-        molecule_size (int): Estimated molecule size that went into the
-            Chromium sequencing.
         min_barcode_number (int): Minimum number of shared barcodes to draw
             an edge in the Linkgraph.
         min_barcode_fraction (float): Minimum fraction of shared barcodes to
@@ -537,6 +584,9 @@ def main(contig_lengths, GEMlist, molecule_size, min_barcode_number, min_barcode
         dict: dictionary of new scaffold names and which input contigs
             that should go into the new scaffold.
     '''
+
+    global GEMs
+    GEMs = GEMlist
 
     # Collect the fraction of shared barcodes in the all-against-all
     # comparison of windows
@@ -548,15 +598,4 @@ def main(contig_lengths, GEMlist, molecule_size, min_barcode_number, min_barcode
     edges = makeEdges(GEMcomparison, min_barcode_fraction)
     graph = Linkgraph(nodes, edges)
 
-    # In dev:
-    # Create backbone graph where contigs shorter than molecule size are ignored
-    # First filter GEMlist to remove these contigs
-    #backbone_GEMlist = filterGEMlist(contig_lengths, GEMlist, molecule_size)
-    #backbone_GEMcomparison = pairwise_comparisons(backbone_GEMlist)
-    #edges = makeEdges(backbone_GEMcomparison, min_barcode_fraction)
-    #graph = Linkgraph(nodes, edges)
-
-    paths = unambiguousPaths(graph) # Determine unambiguous paths
-    scaffolds = makeScaffolds(paths)
-
-    return graph, scaffolds
+    return graph

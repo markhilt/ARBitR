@@ -13,6 +13,7 @@ Licensed under the GPL3 license. See LICENSE file.
 import numpy as np
 import pysam
 from scipy.stats import t
+
 import misc
 
 def collectGEMs(window, mapq):
@@ -21,15 +22,22 @@ def collectGEMs(window, mapq):
     """
     tig, start, stop = window[0], window[1], window[2]
     reads = samfile.fetch(tig, start, stop)
-    BC_list = []
+    BC_set = set()
+    occurrences = set()
     for read in reads:
         if read.has_tag('BX') == True and read.mapping_quality >= mapq:
             BC = read.get_tag("BX")
-            BC_list.append(BC)
-    BC_list = set(BC_list)
 
-    return BC_list
+            # This part is to only add barcodes that are present in more than one
+            # read, to avoid sporadic hits.
+            if BC in occurrences:
+                BC_set.add(BC)
+            else:
+                occurrences.add(BC)
 
+    return BC_set
+
+"""
 def getWindows(contig, region_size, contig_length):
     '''
     To split up the contig into windows
@@ -43,8 +51,30 @@ def getWindows(contig, region_size, contig_length):
         endstart = contig_length - region_size
     end = (endstart,contig_length)
     return [start,end]
+"""
 
-def main(input_bam, region_size, mapq, contig_dict):
+def getWindows(region_size, contig_dict):
+    '''Generate windows from contig_dict
+    Args:
+        region_size (int): User specified window size.
+        contig_dict (dict): Contigs to use and their lengths.
+    Yields:
+        iterator of windows
+    '''
+
+    for contig, length in contig_dict.items():
+        if length <= region_size:
+            # If contig is shorter than region_size, yield only one window of
+            # the whole contig
+            yield (contig+"a", 0, length)
+
+        else:
+            # Otherwise yield two windows of the contig: one for the start
+            # and one for the end regions of the contig
+            yield (contig+"s", 0, region_size)
+            yield (contig+"e", length - region_size, length)
+
+def main(input_bam, contig_dict, region_size=20000, mapq=60):
     global samfile
     samfile = pysam.AlignmentFile(input_bam, "rb")
     GEMlist = {} # Inappropriately named "list"
@@ -52,7 +82,31 @@ def main(input_bam, region_size, mapq, contig_dict):
     # First step is to collect all barcodes (passing -q cutoff) that are aligned
     # to each contigs first and last regions (-l)
     misc.printstatus("Starting barcode collection. Found {0} contigs.".format(len(contig_dict.keys())))
-    donecontigs = 0
+
+    # Generate windows
+    windows = getWindows(region_size, contig_dict)
+
+    # Iterate over windows to collect barcodes sets
+    for idx, window in enumerate(windows):
+        # Unpack variables, for readability
+        region, contig, start, end = window[0], window[0][:-1], window[1], window[2]
+
+        # Print progress. Number of windows is dependent on if running on
+        # backbone or on small contigs.
+        if idx in range(0,100000000,20):
+            if region[-1] == "a":
+                misc.printstatusFlush("[ BARCODE COLLECTION ]\t"+misc.reportProgress(idx, len(contig_dict.keys())))
+            else:
+                misc.printstatusFlush("[ BARCODE COLLECTION ]\t"+misc.reportProgress(idx, len(contig_dict.keys())*2))
+
+        # Collect barcodes from the window
+        GEMs = collectGEMs( (contig, start, end), mapq)
+
+        # If at least 100 barcodes in list, use it
+        if len(GEMs) > 100:
+            GEMlist[region] = GEMs
+
+    '''
     for contig in contig_dict:
 
         # Report progress every 20 windows
@@ -72,13 +126,17 @@ def main(input_bam, region_size, mapq, contig_dict):
             elif window == windowlist[1]:
                 region = contig + "e"
 
-            if GEMs:
+            # If at least 100 barcodes in list, use it
+            if len(GEMs) > 100:
                 GEMlist[region] = GEMs
 
         donecontigs += 1
+    '''
 
-    misc.printstatus("[ BARCODE COLLECTION ]\t"+misc.reportProgress(donecontigs, len(contig_dict.keys())))
-
+    if region[-1] == "a":
+        misc.printstatus("[ BARCODE COLLECTION ]\t"+misc.reportProgress(len(contig_dict.keys()), len(contig_dict.keys())))
+    else:
+        misc.printstatus("[ BARCODE COLLECTION ]\t"+misc.reportProgress(len(contig_dict.keys())*2, len(contig_dict.keys())*2))
     samfile.close()
 
     return GEMlist
