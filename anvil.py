@@ -23,10 +23,11 @@ import pysam
 from scipy.stats import t
 
 import formatting_tools
-import graph_building
-import barcode_collection
+import graph_building_olc
+import barcode_collection_olc
 import misc
-import merge_fasta
+import merge_fasta_olc
+import fill_junctions
 
 parser = argparse.ArgumentParser(description="Reads a bam file, creates links \
                                             between contigs based on linked read \
@@ -38,10 +39,6 @@ parser.add_argument("-i", "--input_fasta", \
                     help="Input fasta file for contig merging. Optional. \
                     If not specified, will only output linkage graph in \
                     .gfa and .tsv format.", \
-                    type = str)
-parser.add_argument("-p", "--input_paths", \
-                    help="Input paths file for scaffolding. Optional. \
-                    If specified, will skip linkage step.", \
                     type = str)
 parser.add_argument("-s","--region_size", \
                     help="Size of region of contig start and end to collect \
@@ -83,6 +80,7 @@ def getOut():
         outfilename = args.input_bam.split(".bam")[0]+".anvil"
     return outfilename
 
+# Deprecated
 def formatContigs(samfile):
     '''
     Creates a dict where keys are contig names and values their lengths
@@ -98,13 +96,15 @@ def formatContigs(samfile):
 
     return contig_dict, gfa_header
 
-def writeGfa(outfilename, gfa_header, graph):
+def writeGfa(outfilename, input_contig_lengths, graph):
     '''
     Writes the graph in gfa format.
     '''
-    gfa_header = "H\tVN:Z:AnVIL/link_graph\n" + "\n".join(gfa_header)
+
     with open(outfilename + ".gfa", "w", encoding = "utf-8") as gfa:
-        gfa.write(gfa_header+"\n")
+        gfa.write("H\tVN:Z:AnVIL/link_graph\n")
+        for k,v in input_contig_lengths.items():
+            gfa.write("S\t{0}\t*\tLN:i:{1}\n".format(k,str(v)))
         gfa.write(formatting_tools.formatGFA(graph))
 
 # Deprecated
@@ -125,6 +125,7 @@ def writeFasta(outfilename, linked_scaffolds):
             fastaout.write(">"+k+"\n")
             fastaout.write(v+"\n")
 
+# Not used
 def writeTSV(gfa_header, graph):
     '''
     Writes the graph in tsv format, compatible with LINKS.
@@ -141,70 +142,90 @@ def writePaths(outfilename, scaffolds):
 
 def main():
     misc.printstatus("Starting AnVIL.")
+
+    # Unpack arguments
+    region_size = args.region_size
+    molecule_size = args.molecule_size
+    mapq = args.mapq
+    barcode_number = args.barcode_number
+    barcode_fraction = args.barcode_fraction
+
+    if region_size > molecule_size:
+        misc.printstatus("Larger --region_size than --molecule_size detected. Using default values instead.")
+        region_size, molecule_size = 20000, 45000
+
     outfilename = getOut() # Create a prefix for output files
-
-    global input_contigs
     samfile = pysam.AlignmentFile(args.input_bam, "rb")
-    input_contigs = samfile.references
-    input_contig_lengths, gfa_header = formatContigs(samfile)
-
+    input_contig_lengths = dict(zip(samfile.references, samfile.lengths))
     samfile.close()
 
-    # If user provided a paths file, skip graph building and jump straight to
-    # scaffolding based on these paths
-    if not args.input_paths:
-        # First step is to do the initial check through of the bam file,
-        # to find any region where there is a reduction in barcode continuity
-        # misc.printstatus("Searching input bam file for suspicious regions: {}".format(args.input_bam))
-        #suspicious_regions = validate_runner.main(args.input_bam)
+    # Split dataset into backbone and small contigs
+    misc.printstatus("Collecting contigs.")
+    backbone_contig_lengths = { ctg:length for ctg, length in input_contig_lengths.items() if length > molecule_size}
+    small_contig_lengths = {k:input_contig_lengths[k] for k in input_contig_lengths.keys() - backbone_contig_lengths.keys()}
 
-        # Second step is to collect the barcodes from the input bam file
-        misc.printstatus("Collecting barcodes.")
-        GEMlist = barcode_collection.main(  args.input_bam, \
-                                            args.region_size, \
-                                            args.mapq, \
-                                            input_contig_lengths)
+    # First step is to collect the barcodes for the backbone graph
+    misc.printstatus("Collecting barcodes for linkgraph.")
+    GEMlist = barcode_collection_olc.main(  args.input_bam, \
+                                            backbone_contig_lengths, \
+                                            region_size, \
+                                            mapq)
 
-        # Third step is to build the link graph based on the barcodes
-        misc.printstatus("Creating link graph.")
-        graph, paths = graph_building.main(input_contig_lengths, \
-                                        GEMlist, \
-                                        args.molecule_size, \
-                                        args.barcode_number, \
-                                        args.barcode_fraction)
+    # Second step is to build the link graph based on the barcodes
+    misc.printstatus("Creating link graph.")
+    backbone_graph = graph_building_olc.main(backbone_contig_lengths, \
+                                            GEMlist, \
+                                            barcode_number, \
+                                            barcode_fraction)
 
-        misc.printstatus("Writing graph to {}.gfa.".format(outfilename))
-        writeGfa(outfilename, gfa_header, graph)
-        misc.printstatus("Writing paths to {}.paths.txt.".format(outfilename))
-        writePaths(outfilename, paths)
+    misc.printstatus("Writing link graph to {}.backbone.gfa.".format(outfilename))
+    writeGfa(outfilename+".backbone", backbone_contig_lengths, backbone_graph)
+
+    # Third step is to traverse the graph and build paths
+    misc.printstatus("Finding paths.")
+    backbone_graph.unambiguousPaths() # Fill graph.paths
+
+    # Fourth step is to collect the barcodes from the input bam file,
+    # this time for the small contigs
+    misc.printstatus("Collecting barcodes from short contigs.")
+    GEMlist = barcode_collection_olc.main(  args.input_bam, \
+                                            small_contig_lengths, \
+                                            molecule_size, \
+                                            mapq)
+
+    # Fifth step is to pull in the short contigs into the linkgraph junctions,
+    # if they have
+    # Sixth step is to fill the junctions in the backbone_graph
+    paths = fill_junctions.fillJunctions(backbone_graph, GEMlist)
+
+    '''
+    # Fifth step is to build the full link graph based on the barcodes
+    misc.printstatus("Creating full link graph.")
+    graph = graph_building_olc.main(input_contig_lengths, \
+                                    GEMlist, \
+                                    args.barcode_number, \
+                                    args.barcode_fraction)
+
+    misc.printstatus("Writing complete link graph to {}.gfa.".format(outfilename))
+    writeGfa(outfilename, input_contig_lengths, graph)
+    '''
+
+    writePaths(outfilename+".pre-merge", {str(idx):path for idx, path in enumerate(paths)})
+
+    if os.path.isfile(args.input_fasta):
+        # If user gave an assembly fasta file, use this for merging
+        new_scaffolds, scaffold_correspondence = merge_fasta_olc.main(args.input_fasta, args.input_bam, paths)
+        misc.printstatus("Found fasta file for merging: {}".format(args.input_fasta))
+        misc.printstatus("Writing merged fasta to {0}.fasta".format(outfilename))
+        writeFasta(outfilename,new_scaffolds)
+        writePaths(outfilename+".correspondence", scaffold_correspondence)
 
     else:
-        # If user provided a paths file, skip barcode collection and graph building
-        if os.path.isfile(args.input_paths):
-            misc.printstatus("Found input paths file: ".format(args.input_paths))
-            misc.printstatus("Using this to create scaffolds.")
-            paths = misc.readPaths(args.input_paths)
-
-        else:
-            raise Exception("Path file not found: ".format(args.input_paths))
-
-    if args.input_fasta:
-        if os.path.isfile(args.input_fasta):
-            # If user gave an assembly fasta file, use this for merging
-            misc.printstatus("Found fasta file for merging: {}".format(args.input_fasta))
-            new_scaffolds, scaffold_correspondence = merge_fasta.main(args.input_fasta, args.input_bam, paths)
-            misc.printstatus("Writing merged fasta to {0}.fasta".format(outfilename))
-            writeFasta(outfilename,new_scaffolds)
-            writePaths(outfilename, scaffold_correspondence)
-        else:
-            raise Exception("Fasta file not found: ".format(args.input_fasta))
-
-    else:
-        # else finish
-        misc.printstatus("No fasta file specified for merging. Pipeline finished.")
+        misc.printstatus("No fasta file found for merging. Pipeline finished.")
 
     if os.path.isfile("tmp.fasta"):
         os.remove("tmp.fasta")
+
     misc.printstatus("AnVIL successfully completed!\n")
 
 if __name__ == "__main__":

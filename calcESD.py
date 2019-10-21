@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.stats import t
+from scipy.special import logsumexp
 
 def esd_critical(alpha, n, i):
     '''
@@ -8,20 +9,33 @@ def esd_critical(alpha, n, i):
     df = n - i - 2
     p = 1 - alpha / ( 2 * (n-i+1) )
     t_ppr = t.ppf(p, df)
-    ret = (t_ppr * (n-i)) / np.sqrt( (n - i - 1 + t_ppr**2) * (n-i+1) )
-    return(ret)
+
+    sqrt = np.sqrt( (n - i - 1 + t_ppr**2) * (n-i+1) )
+    if sqrt != 0:
+        # Some transformations are needed to handle really small sqrt's
+        if sqrt < 0.01:
+            import ipdb; ipdb.set_trace()
+        # np.exp(logsumexp((t_ppr * (n-i))) - logsumexp(sqrt))
+        # np.logaddexp(t_ppr * (n-i)) - np.logaddexp(sqrt)
+        return (t_ppr * (n-i)) / sqrt
+    else:
+        return 0
+
 
 def getOutliers_QC(fracs,windows,r):
-    '''
-    Calculate outlying fractions with an ESD test.
+    '''Calculate outlying fractions with an ESD test.
+
     fracs is a numpy array containing fraction values to be searched for outliers.
     windows is a list of the windows in order of appearance in fracs. r is the number of
-    values to remove (i.e. outliers to consider)
+    values to remove (i.e. number of outliers to consider)
     '''
     # Start by collecting all fractions
     n = len(fracs)
-    alpha = 0.000000000001
+    if r >= n:
+        r = n - 2
+    alpha = 0.0000000001
     tokeep = None
+    #y = fracs.astype("float32")
     y = fracs
     y2 = y
     outl = {} # dict to collect output
@@ -32,10 +46,13 @@ def getOutliers_QC(fracs,windows,r):
         if np.std(y2) == 0:
             break
 
-        ares = abs(y2 - np.mean(y2)) / np.std(y2)
-        Ri = max(ares)
-        index = np.where(ares == Ri)
-        y2 = np.delete(y2,index)
+        try:
+            ares = abs(y2 - np.mean(y2)) / np.std(y2)
+            Ri = max(ares)
+            index = np.where(ares == Ri)
+            y2 = np.delete(y2,index)
+        except:
+            import ipdb; ipdb.set_trace()
 
         ## Compute critical value.
         if Ri > esd_critical(alpha,n,i):
