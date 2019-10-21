@@ -23,10 +23,10 @@ import pysam
 from scipy.stats import t
 
 import formatting_tools
-import graph_building_olc
-import barcode_collection_olc
+import graph_building
+import barcode_collection
 import misc
-import merge_fasta_olc
+import merge_fasta
 import fill_junctions
 
 parser = argparse.ArgumentParser(description="Reads a bam file, creates links \
@@ -166,14 +166,14 @@ def main():
 
     # First step is to collect the barcodes for the backbone graph
     misc.printstatus("Collecting barcodes for linkgraph.")
-    GEMlist = barcode_collection_olc.main(  args.input_bam, \
+    GEMlist = barcode_collection.main(  args.input_bam, \
                                             backbone_contig_lengths, \
                                             region_size, \
                                             mapq)
 
     # Second step is to build the link graph based on the barcodes
     misc.printstatus("Creating link graph.")
-    backbone_graph = graph_building_olc.main(backbone_contig_lengths, \
+    backbone_graph = graph_building.main(backbone_contig_lengths, \
                                             GEMlist, \
                                             barcode_number, \
                                             barcode_fraction)
@@ -188,7 +188,7 @@ def main():
     # Fourth step is to collect the barcodes from the input bam file,
     # this time for the small contigs
     misc.printstatus("Collecting barcodes from short contigs.")
-    GEMlist = barcode_collection_olc.main(  args.input_bam, \
+    GEMlist = barcode_collection.main(  args.input_bam, \
                                             small_contig_lengths, \
                                             molecule_size, \
                                             mapq)
@@ -201,7 +201,7 @@ def main():
     '''
     # Fifth step is to build the full link graph based on the barcodes
     misc.printstatus("Creating full link graph.")
-    graph = graph_building_olc.main(input_contig_lengths, \
+    graph = graph_building.main(input_contig_lengths, \
                                     GEMlist, \
                                     args.barcode_number, \
                                     args.barcode_fraction)
@@ -214,7 +214,7 @@ def main():
 
     if os.path.isfile(args.input_fasta):
         # If user gave an assembly fasta file, use this for merging
-        new_scaffolds, scaffold_correspondence = merge_fasta_olc.main(args.input_fasta, args.input_bam, paths)
+        new_scaffolds, scaffold_correspondence = merge_fasta.main(args.input_fasta, args.input_bam, paths)
         misc.printstatus("Found fasta file for merging: {}".format(args.input_fasta))
         misc.printstatus("Writing merged fasta to {0}.fasta".format(outfilename))
         writeFasta(outfilename,new_scaffolds)
