@@ -19,19 +19,19 @@ import mappy as mp
 import nuclseqTools as nt
 import misc
 
-# In dev:
 class Overlapgraph:
     """Simple overlap graph
     Nodes are contigs, edges are overlaps between contigs in the form
     (node1, node1_ori, node2, node2_ori, mappy.Alignment).
     """
-    def __init__(self, nodes = [], edges = []):
-        self.nodes = nodes # [node1, node2, ...]
-        self.edges = edges # [(node1, node1_ori, node2, node2_ori, mappy.Alignment), ... ]
+    def __init__(   self, nodes = set(), \
+                    edges = set()):
+        self.nodes = nodes # {node1, node2, ...}
+        self.edges = edges # {(node1, node1_ori, node2, node2_ori, mappy.Alignment), ... }
         self.paths = [] # Paths through the graph. Called externally.
         self.partial_paths = [] # Also keep partial paths
-        self.incomplete_paths = []  # Combinations of partial paths with None at
-                                    # the gap position
+        self.incomplete_paths = []   # Combinations of partial paths with None at
+                                        # the gap position
 
     def __str__(self):
         return "Overlapgraph([{0} nodes, {1} edges, {2} complete paths, {3} incomplete_paths])".format( len(self.nodes), \
@@ -40,67 +40,92 @@ class Overlapgraph:
                                                                     len(self.incomplete_paths))
 
     def addNode(self, node):
+        '''Adds node to graph
         '''
-        Adds node to graph
-        '''
-        self.nodes.append(node)
+        self.nodes.add(node)
 
     def addEdges(self, edges):
+        '''Adds edges (list) to graph.
         '''
-        Adds edges (list) to graph.
-        '''
-        self.edges = self.edges + edges
+        self.edges.add(edges)
 
     def nodes():
-        '''
-        Returns all nodes in graph
+        '''Returns all nodes in graph
         '''
         return self.nodes
 
     def edges():
-        '''
-        Returns all edges in graph
+        '''Returns all edges in graph
         '''
         return self.edges
 
-    def reverse_direction(self,dir):
+    def outgoing(self, node, direction):
+        '''Returns all outgoing edges from node
         '''
-        Reverse direction of dir.
-        '''
-        if dir == "+":
-            return "-"
-        else:
-            return "+"
+        return [ edge for edge in self.edges if edge[0] == node and edge[1] == direction ]
 
-    def outgoing(self,node, direction):
-        '''
-        Returns all outgoing edges from node
-        '''
-        return  [ edge for edge in self.edges if edge[0] == node and edge[1] == direction ]
+    def traverse(self, start, start_direction, target, target_direction):
+        '''Appends all possible paths between the nodes start and target to self.paths
 
-    def traverse(self, start, start_direction, target, target_direction, path = [], edge = None):
+        Description:
+            Look for paths connecting start and target nodes. Every combination
+            of edges is considered, and partial paths, i.e. extensions from
+            start that don't reach target, are also kept.
+
+        Args:
+            start (str): starting contig name.
+            start_direction (str): starting contig orientation.
+            target (str): target contig name.
+            target_direction (str): target contig orientation.
         '''
-        Appends all possible paths between the nodes start and target to self.paths
-        '''
-        if edge != None:
-            path = path + [edge]
-        if start == target and start_direction == target_direction:
-            self.paths.append(path)
-        else:
-            outgoing_edges = self.outgoing(start,start_direction)
-            if outgoing_edges == [] and path != [] and start != target:
-                self.partial_paths.append(path)
-            for edge in outgoing_edges:
-                if edge not in path:
-                    self.traverse(edge[2], edge[3], target, target_direction, path, edge)
+        def __visit(n, n_dir, path):
+            visited = [v[0] for v in path]
+
+            # Check if target is reached yet.
+            if n == target:
+                # Also check that direction is correct. If wrong, there might be
+                # a partial_path to keep
+                if n_dir == target_direction:
+                    self.paths.append(path)
+                elif len(path) > 1:
+                    self.partial_paths.append(path[:-1])
+
+            # Check that n has not been visited before in the path
+            elif n not in visited:
+                # Look for outgoing edges from the current node
+                outgoing = self.outgoing(n, n_dir)
+                # If there aren't any, save partial path and return
+                if len(outgoing) == 0 and path != []:
+                        self.partial_paths.append(path)
+                else:
+                    # If there is at least one, continue traversal, creating
+                    # branches if more than one outgoing edge
+                    for edge in outgoing:
+                        if edge[2] not in visited:
+                            __visit(edge[2], edge[3], path+[edge])
+                        # If edge[2] was visited before, there might be a partial
+                        # path to save
+                        elif path != []:
+                            self.partial_paths.append(path)
+
+        __visit(start, start_direction, [])
 
     def reverse_path(self, path):
-        # Reverse the given path
+        '''Reverse the given path
+        '''
+        def reverse_direction(dir):
+            return "-" if dir == "+" else "+"
         reversed = []
-        for step in path[::-1]:
-            for out in self.outgoing(step[2], self.reverse_direction(step[3])):
-                if out[2] == step[0] and out[3] == self.reverse_direction(step[1]):
+        for step in path[::-1]: # Iterate over path in reverse
+            # Iterate over outgoing edges
+            for out in self.outgoing(step[2], reverse_direction(step[3])):
+                # Look for the edge we're looking for
+                if out[2] == step[0] and out[3] == reverse_direction(step[1]):
                     reversed.append(out)
+                    break
+                # If the reverse is not in the graph, we need to return None
+                if step == path[0]:
+                    return None
         return reversed
 
     def resolve_incomplete_paths(self, start, start_ori, target, target_ori):
@@ -117,14 +142,10 @@ class Overlapgraph:
             start_ori (str): starting contig orientation.
             target (str): target contig name.
             target_ori (str): target contig orientation.
-            incomplete_paths (merge_fasta.Overlapgraph.incomplete_paths):
-
-        Returns:
-            list: possible paths.
         '''
-        # The simplest path is just start and target contigs with a gap in between,
-        # use this as a starting point.
-        self.incomplete_paths.append( [ (start, start_ori, target, target_ori, None) ] )
+        # The simplest path is just start and target contigs with a gap in between.
+        # Add as incomplete path
+        self.incomplete_paths.append( [(start, start_ori, target, target_ori, None)] )
 
         # I think we first need to sort out paths starting from start and ones
         # starting from target
@@ -136,55 +157,55 @@ class Overlapgraph:
                 reverse_paths.append(path)
 
         # Then we can try to combine them in different ways
-        # Only use each contig once.
         for path in forward_paths:
-            used_contigs = [ p for p in path for p in (p[0], p[2])]
+            # Append the incomplete_path with the gap right before target
+            self.incomplete_paths.append(path + \
+                                        [(path[-1][2], \
+                                        path[-1][3], \
+                                        target, \
+                                        target_ori, \
+                                        None)] )
 
+            # Then look through the reverse paths to see if there is a possible
+            # combination, i.e. one that doesn't use any of the same contigs.
             if len(reverse_paths) > 0:
                 # Try every member of reverse_paths
                 for rev_path in reverse_paths:
                     # Find if there is a reverse path that doesn't use any of the same
                     # contigs as the forward one.
-                    rev_path_contigs = [ p for p in rev_path for p in (p[0], p[2])]
-                    if set(used_contigs).isdisjoint(rev_path_contigs) == False: # Check for overlaps
-                        # If not, it's a possible path
-                        #ipdb.set_trace()
+                    used_contigs = set([ p for p in path for p in (p[0], p[2])])
+                    rev_path_contigs = set([ p for p in rev_path for p in (p[0], p[2])])
+                    if not set(used_contigs).isdisjoint(rev_path_contigs): # Make sure there are no overlaps
+                        # If no overlaps between the two sets, it's a possible path
                         rev_path = self.reverse_path(rev_path)
 
                         # TODO: find why sometimes only the alignment is found
                         # in one direction
-                        if len(rev_path) > 0:
+                        if rev_path:
                             self.incomplete_paths.append(   path + \
                                                             [(path[-1][2], \
                                                             path[-1][3], \
                                                             rev_path[0][0], \
                                                             rev_path[0][1], \
                                                             None)] + rev_path )
-            else:
-                self.incomplete_paths.append( path + \
-                                            [(path[-1][2], \
-                                            path[-1][3], \
-                                            target, \
-                                            target_ori, \
-                                            None)] )
 
         # We also need to do the same for the extensions from target,
         # in case there are no extensions from start
         for path in reverse_paths:
-            used_contigs = [ p for p in path for p in (p[0], p[2])]
 
             if len(forward_paths) > 0:
                 # Try every member of forward_paths
                 for for_path in forward_paths:
                     # Find if there is a reverse path that doesn't use any of the same
                     # contigs as the forward one.
-                    for_path_contigs = [ p for p in rev_path for p in (p[0], p[2])]
-                    if not set(used_contigs).isdisjoint(for_path_contigs): # Check for overlaps
-                        # If not, it's a possible path
+                    used_contigs = set([ p for p in path for p in (p[0], p[2])])
+                    for_path_contigs = set([ p for p in for_path for p in (p[0], p[2])])
+                    if not set(used_contigs).isdisjoint(for_path_contigs): # Make sure there are no overlaps
+                        # If no overlaps between the two sets, it's a possible path
                         # Sort out directions and append
                         rev_path = self.reverse_path(path)
-                        if len(rev_path) > 0:
-                            self.incomplete_paths.append(   for_path + \
+                        if rev_path:
+                            self.incomplete_paths.append(for_path + \
                                                         [(for_path[-1][2], \
                                                         for_path[-1][3], \
                                                         rev_path[0][0], \
@@ -192,31 +213,44 @@ class Overlapgraph:
                                                         None)] + rev_path )
             else:
                 rev_path = self.reverse_path(path)
-                if len(rev_path) > 0:
-                    self.incomplete_paths.append( [(start, \
+                if rev_path:
+                    self.incomplete_paths.append(   [(start, \
                                                     start_ori, \
                                                     rev_path[0][0], \
                                                     rev_path[0][1], None)] \
                                                     + rev_path )
 
 def findOverlap(seq1,seq2):
-    '''Finds and returns all prefix/suffix overlaps between the given two sequences.
+    '''Find overlaps between two sequences.
 
+    Description:
+        Use mappy to find overlaps between all prefix-suffix pairs of the
+        two given nucleotide sequences.
+
+    Args:
+        seq1 (str): First nucleotide sequence, serving as reference.
+        seq2 (str): Second nucleotide sequence, serving as query.
+
+    Returns:
+        list: suffix_overlaps, list of overlaps from the suffix of seq1
+        list: prefix_overlaps, list of overlaps from the suffix of revcomped seq1
     '''
+    alignment_preset = "map-pb"
 
     #### First find reference suffix overlaps. We will treat seq1 as reference
-    # Write seq1 to fasta file
+    # Write seq1 to temporary fasta file
     with open("tmp.fasta", "w") as tmpfasta:
         tmpfasta.write(">tmp\n")
         tmpfasta.write(seq1)
 
     # Build index from seq1
-    idx = mp.Aligner(fn_idx_in="tmp.fasta", preset="map-pb")#k=19, w=10, scoring=[1,4,6,26])
+    #idx = mp.Aligner(fn_idx_in="tmp.fasta", preset="map-pb")#k=19, w=10, scoring=[1,4,6,26])
+    idx = mp.Aligner(fn_idx_in="tmp.fasta", preset=alignment_preset)
 
     # Align
     alignments = idx.map(seq2)
 
-    # Iterate over alignment and search for overlapping ends
+    # Iterate over alignments and search for overlapping ends
     suffix_overlaps, prefix_overlaps = [], []
     if alignments:
         for aln in alignments:
@@ -226,7 +260,11 @@ def findOverlap(seq1,seq2):
             # last 1 kb of seq2
             # We also need to control that the alignment is in the right direction
 
-            # Overlap is at suffix of reference
+            # Overlap is at suffix of reference. Ideally it ends at the last
+            # coordinate of reference, but because contig ends usually have
+            # poor quality, the alignment might not reach that far. We can still
+            # use the overlap, as long as there is an overhang from the query
+            # sequence.
             if aln.r_en > aln.ctg_len - 1000:
 
                 # Overlap is at prefix of query, in this case it must be in
@@ -246,7 +284,8 @@ def findOverlap(seq1,seq2):
         tmpfasta.write(">tmp\n")
         tmpfasta.write(seq1)
 
-    idx = mp.Aligner(fn_idx_in="tmp.fasta", preset="map-pb")#k=19, w=10, scoring=[1,4,6,26])
+    #idx = mp.Aligner(fn_idx_in="tmp.fasta", preset="map-pb")#k=19, w=10, scoring=[1,4,6,26])
+    idx = mp.Aligner(fn_idx_in="tmp.fasta", preset=alignment_preset)
     alignments = idx.map(seq2)
     prefix_overlaps = []
     if alignments:
@@ -268,14 +307,15 @@ def findOverlap(seq1,seq2):
     return suffix_overlaps, prefix_overlaps
 
 def findOverlaps(fasta):
-    '''Compute all prefix/suffix overlaps of given sequences.
+    '''Compute all prefix/suffix overlaps of given sequences. Return only the
+    longest overlap for each prefix-suffix combination.
 
     Args:
         fasta: fasta in dict format where keys are headers and values sequences
     Returns:
         list: list of tuples describing the overlaps.
     '''
-    overlaps = []
+    overlaps = {}
     for tig1, seq1 in fasta.items():
         for tig2, seq2 in fasta.items():
 
@@ -285,20 +325,35 @@ def findOverlaps(fasta):
                 # Find overlaps between suffix of seq1 and prefix or suffix of seq2
                 suffix_ovls, prefix_overlaps = findOverlap(seq1, seq2)
                 for ovl in suffix_ovls:
-                    if ovl.strand > 0:
-                        strand = "+"
-                    else:
-                        strand = "-"
-                    overlaps.append( (tig1, "+", tig2, strand, ovl) )
+                    strand = "+" if ovl.strand > 0 else "-"
 
+                    # If current prefix-suffix pair not in overlaps, append it
+                    if (tig1, "+", tig2, strand) not in overlaps:
+                        overlaps[(tig1, "+", tig2, strand)] = ovl
+                    else:
+                        # Else check if the new overlap has more matching
+                        # bases, in that case use the new overlap
+                        old_mlen = overlaps[(tig1, "+", tig2, strand)].mlen
+                        if ovl.mlen > old_mlen:
+                            overlaps[(tig1, "+", tig2, strand)] = ovl
+
+                # prefix_overlaps are actually suffix overlaps from the revcomp
+                # of seq1
                 for ovl in prefix_overlaps:
-                    if ovl.strand > 0:
-                        strand = "+"
-                    else:
-                        strand = "-"
-                    overlaps.append( (tig1, "-", tig2, strand, ovl) )
+                    strand = "+" if ovl.strand > 0 else "-"
 
-    return overlaps
+                    # If current prefix-suffix pair not in overlaps, append it
+                    if (tig1, "-", tig2, strand) not in overlaps.keys():
+                        overlaps[(tig1, "-", tig2, strand)] = ovl
+                    else:
+                        # Else check if the new overlap has more matching
+                        # bases, in that case use the new overlap
+                        old_mlen = overlaps[(tig1, "-", tig2, strand)].mlen
+                        if ovl.mlen > old_mlen:
+                            overlaps[(tig1, "-", tig2, strand)] = ovl
+
+    # Reformat to list of tuples
+    return [tuple(list(k)+[ovl]) for k, ovl in overlaps.items()]
 
 def countReads(contig,coords_to_check, region_length):
     '''
@@ -308,7 +363,7 @@ def countReads(contig,coords_to_check, region_length):
     cov = sum([sum(cov_arr[x]) for x in range(0,4,1)]) / region_length
     return cov
 
-def trimFasta(trimmed_fasta_coords, contig_side_to_trim):
+def trimFasta(trimmed_fasta_coords, contig_side_to_trim, mincov):
     '''
     Given a fasta entry with side to trim, returns new start and end coordinates
     Input format: "tigs" or "tige"
@@ -320,9 +375,7 @@ def trimFasta(trimmed_fasta_coords, contig_side_to_trim):
 
     tig = contig_side_to_trim[:-1]
     side = contig_side_to_trim[-1]
-    coords_at_a_time = 50
-    mincov = 50
-
+    step_len = 50
 
     if tig in fastafile.references:
         ctg_len = trimmed_fasta_coords[tig][1]
@@ -330,40 +383,40 @@ def trimFasta(trimmed_fasta_coords, contig_side_to_trim):
         coords_to_trim = 0
 
         if side == "s":
-            coords_to_check = [0,coords_at_a_time]
-            cov = countReads(tig,coords_to_check, coords_at_a_time)
+            coords_to_check = [0,step_len]
+            cov = countReads(tig,coords_to_check, step_len)
 
             while cov <= mincov:
-                coords_to_trim += coords_at_a_time # Update with new end coordinate
-                coords_to_check = [x+coords_at_a_time for x in coords_to_check] # And move to next coordinates
+                coords_to_trim += step_len # Update with new end coordinate
+                coords_to_check = [x+step_len for x in coords_to_check] # And move to next coordinates
 
                 # If contig boundary was passed without coverage being enough,
                 # use all of it
-                if coords_to_trim >= ctg_len - coords_at_a_time:
+                if coords_to_trim >= ctg_len - step_len:
                     coords_to_trim = 0
                     break
 
-                cov = countReads(tig,coords_to_check, coords_at_a_time)
+                cov = countReads(tig,coords_to_check, step_len)
 
         elif side == "e":
-            coords_to_check = [ctg_len-coords_at_a_time,ctg_len]
-            cov = countReads(tig,coords_to_check, coords_at_a_time)
+            coords_to_check = [ctg_len-step_len,ctg_len]
+            cov = countReads(tig,coords_to_check, step_len)
 
             while cov <= mincov:
-                coords_to_trim -= coords_at_a_time    # Update with new end coordinate
-                coords_to_check = [x-coords_at_a_time for x in coords_to_check] # And move to next coordinates
+                coords_to_trim -= step_len    # Update with new end coordinate
+                coords_to_check = [x-step_len for x in coords_to_check] # And move to next coordinates
 
                 # If contig boundary was passed without coverage being enough,
                 # use all of it
-                if abs(coords_to_trim) >= ctg_len - coords_at_a_time:
+                if abs(coords_to_trim) >= ctg_len - step_len:
                     coords_to_trim = 0
                     break
 
-                cov = countReads(tig,coords_to_check, coords_at_a_time)
+                cov = countReads(tig,coords_to_check, step_len)
 
     return coords_to_trim
 
-def trimSequences(paths):
+def trimSequences(paths, mincov):
     '''Trim away low quality regions of input sequences
 
     Description:
@@ -375,20 +428,26 @@ def trimSequences(paths):
 
     Args:
         paths (list): list of lists. Each nested list contains ordered
-        graph_building.Junction objects.
+            graph_building.Junction objects.
+        mincov (int): Trim contig ends with lower average coverage than this
+            value
     Returns:
         dict: trimmed_fasta_coords. Keys: input contig headers, values:
-            start and end coordinates to keep.
+            start and end coordinates to keep, in addition to True or False
+            for start and end if they were trimmed or not.
     '''
     # trimmed_fasta_coords is a dict with coords to keep from original fasta
     # Format: {contig: [start_coord, end_coord]}
     # Start by filling with old coords, which will then be changed
     trimmed_fasta_coords = {}
     for idx, ctg in enumerate(fastafile.references):
-        trimmed_fasta_coords[ctg] = [0, fastafile.lengths[idx]]
+        trimmed_fasta_coords[ctg] = [0, fastafile.lengths[idx], False, False]
 
     # Then find new coordinates for all sequences to merge
-    for path in paths:
+    for idx, path in enumerate(paths):
+        if idx in range(0,100000000,5):
+            misc.printstatusFlush("[ TRIMMING ]\t" + misc.reportProgress(idx+1, len(paths)))
+
         for junction in path:
             if junction.start != None:
                 start_tig, start_side = junction.start[:-1], junction.start[-1]
@@ -402,29 +461,46 @@ def trimSequences(paths):
 
             # Trim the sides of contigs where a junction is formed,
             # and don't trim places where there are no junctions.
-            if start_side == "s":
+            if start_side == "s" \
+            and trimmed_fasta_coords[start_tig][2] == False:
                 trimmed_fasta_coords[start_tig] =   [trimmed_fasta_coords[start_tig][0] + \
-                                                    trimFasta(trimmed_fasta_coords, junction.start), \
-                                                    trimmed_fasta_coords[start_tig][1]]
-            elif start_side == "e":
+                                                    trimFasta(trimmed_fasta_coords, junction.start, mincov), \
+                                                    trimmed_fasta_coords[start_tig][1], \
+                                                    True, \
+                                                    trimmed_fasta_coords[start_tig][3]]
+            elif start_side == "e" \
+            and trimmed_fasta_coords[start_tig][3] == False:
                 trimmed_fasta_coords[start_tig] =   [trimmed_fasta_coords[start_tig][0], \
                                                     trimmed_fasta_coords[start_tig][1] + \
-                                                    trimFasta(trimmed_fasta_coords, junction.start)]
-            if target_side == "s":
+                                                    trimFasta(trimmed_fasta_coords, junction.start, mincov), \
+                                                    trimmed_fasta_coords[start_tig][2], \
+                                                    True]
+            if target_side == "s" \
+            and trimmed_fasta_coords[target_tig][2] == False:
                 trimmed_fasta_coords[target_tig] =  [trimmed_fasta_coords[target_tig][0] + \
-                                                    trimFasta(trimmed_fasta_coords, junction.target), \
-                                                    trimmed_fasta_coords[target_tig][1]]
-            elif target_side == "e":
+                                                    trimFasta(trimmed_fasta_coords, junction.target, mincov), \
+                                                    trimmed_fasta_coords[target_tig][1], \
+                                                    True, \
+                                                    trimmed_fasta_coords[target_tig][3]]
+            elif target_side == "e" \
+            and trimmed_fasta_coords[target_tig][3] == False:
                 trimmed_fasta_coords[target_tig] =  [trimmed_fasta_coords[target_tig][0], \
                                                     trimmed_fasta_coords[target_tig][1] + \
-                                                    trimFasta(trimmed_fasta_coords, junction.target)]
+                                                    trimFasta(trimmed_fasta_coords, junction.target, mincov), \
+                                                    trimmed_fasta_coords[target_tig][2], \
+                                                    True]
 
             # Also trim everything in connections
             for conn in connections:
-                trimmed_fasta_coords[conn] = [trimmed_fasta_coords[conn][0] + \
-                                            trimFasta(trimmed_fasta_coords, conn+"s"), \
-                                            trimmed_fasta_coords[conn][1] + \
-                                            trimFasta(trimmed_fasta_coords, conn+"e")]
+                if not trimmed_fasta_coords[conn][2] == True \
+                or not trimmed_fasta_coords[conn][3] == True:
+                    trimmed_fasta_coords[conn] = [trimmed_fasta_coords[conn][0] + \
+                                                trimFasta(trimmed_fasta_coords, conn+"s", mincov), \
+                                                trimmed_fasta_coords[conn][1] + \
+                                                trimFasta(trimmed_fasta_coords, conn+"e", mincov), \
+                                                True, True]
+    misc.printstatus("[ TRIMMING ]\t" + misc.reportProgress(idx+1, len(paths)))
+
     return trimmed_fasta_coords
 
 def chop_cigar(cigar):
@@ -455,24 +531,23 @@ def reverse_cigar(cigar_list):
     return reversed
 
 def shortestPath(paths):
-    '''Find the shortest path.
+    '''Find the path with the longest overlap distance.
 
     Description: Each member of paths is a list, containing starting contig,
         starting contig direction, aligned contig, aligned contig direction,
         and alignment information in a mappy.Alignment object. The path with
-        the one with the longest overlap distance is returned.
+        the longest overlap distance is returned.
     Args:
         paths: graph_building.Overlapgraph.paths
     Returns:
         List: The path that contains the longest overlap distance.
     '''
+    # Start at the first path
     best_path = paths[0]
 
     # Allow for incomplete paths
-    best_ovl = 0
-    best_ovl += sum( [step[4].blen for step in best_path if step[4] != None ] )
-
-    for path in paths:
+    best_ovl = sum( [step[4].blen for step in best_path if step[4] != None ] )
+    for path in paths[1:]:
         ovl_dist = 0
         ovl_dist += sum( [step[4].blen for step in path if step[4] != None] )
         if ovl_dist > best_ovl:
@@ -480,10 +555,21 @@ def shortestPath(paths):
             best_ovl = ovl_dist
     return best_path
 
-def createConsensus(step,string1,string2):
-    '''
-    Given two overlapping nucleotide strings and mappy alignment information,
+def createConsensus(step,string1,string2, gapsize):
+    '''Given two overlapping nucleotide strings and mappy alignment information,
     merges and returns the nucleotide strings.
+
+    Args:
+        step: step in the path. Looks like:
+        ("ctg1", "ctg1_orientation", "ctg2", "ctg2_orientation", <mappy.Alignment object>)
+        string1: first nucleotide string
+        string2: second nucleotide string
+        gapsize (int): Gap size for scaffolding.
+    Returns:
+        Str: The nucleotide sequence starting at the alignment r_st, if any,
+        otherwise at the start of the gap.
+        Int: query_pos, query position.
+        Bool: gap, if there is a gap in the sequence or not.
     '''
     ref_ori, target_ori = step[1], step[3]
     aln = step[4]
@@ -497,10 +583,10 @@ def createConsensus(step,string1,string2):
         string2 = nt.reverse_complement(string2)
 
     # If there is no alignment, merge by gap insertion
-    if aln == None:
-        output_string = [string1,"NNNNNNNNNN", string2]
-        query_pos = 0
+    if not aln:
+        output_string = ["N"*gapsize, string2]
         gap = True
+        ovl_len = 0
 
     else:
         cig_list = chop_cigar(aln.cigar_str)
@@ -511,8 +597,7 @@ def createConsensus(step,string1,string2):
             cigar_list = reverse_cigar(cig_list)
             query_pos = len(string2) - aln.q_en
 
-        # First add sequence of string1 up until alignment start
-        output_string = [string1[:ref_pos]]
+        output_string = []
 
         # Then walk through the aligned region in the cigar string,
         # gradually building the sequence. Because of the tendency of PacBio
@@ -539,54 +624,125 @@ def createConsensus(step,string1,string2):
 
         # After iterating over the whole alignment, add remaining bases from
         # query sequence
+        ovl_len = len(''.join(output_string))
         output_string.append( string2[query_pos:] )
         gap = False
 
-    return ''.join(output_string), query_pos, gap
+    return ''.join(output_string), gap, ovl_len
 
-def mergeSeq(path):
-    '''Traverse the path to merge visited contigs.
+def mergeSeq(path, gapsize):
+    '''Traverse the path to merge visited contig sequences.
 
     Description:
         Create a combined sequence of all contigs included in path. A merge
         will be performed at overlaps, and if there is no overlap, i.e. the
-        <mappy.Alignment object> is None, a gap is introduced.
+        <mappy.Alignment object> is None, a gap is introduced. The sequence is
+        built by iteration over the path. During each iteration, if there is
+        an overlap, the merged sequence is first trimmed for the number of bases
+        corresponding to the reference overlap length, and then extended,
+        starting at the overlap beginning and including all of the query sequence.
+        If there is no overlap, the merged sequence is not trimmed and the
+        extension begins at the gap.
     Args:
-        path (list): List of steps in the path. A step looks like:
+        path (list): List of steps in the path. Each step is a tuple looking like:
             ('tig1_name', 'tig1_dir', 'tig2_name', 'tig2_dir', <mappy.Alignment object>),
-            where dirs are either "+" or "-"
+            where dirs are either "+" or "-".
+        gapsize (int): Gap size for scaffolding.
     Returns:
-        str: merged_sequence, the merged sequence
+        str: merged_sequence, the merged/gapped nucleotide sequence
         list: included_contigs, names of included contigs
+        int: n_gaps, number of gaps
+        int: n_merges, number of aligned merges
+        list: bed_coords, coordinates of the different merged feaures
     '''
-    merged_sequence = ""
-    included_contigs = []
-    coords_to_trim1 = 0
-    coords_to_trim2 = 0
-    included_contigs.append(path[0][0])
-    n_gaps, n_merges = 0,0
+
+    # Initiate the merged sequence by adding the first reference sequence
+    # Control for reverse orientation
+    first_step = path[0]
+    merged_sequence = trimmed_fasta[first_step[0]] if first_step[1] == "+" \
+    else nt.reverse_complement(trimmed_fasta[first_step[0]])
+    bed_coords = [( "0", str(len(merged_sequence)), first_step[0], \
+                    "0", first_step[1], "0", str(len(merged_sequence)), \
+                    "0,0,255")]
+
+
+    # Keep track of which sequences that we've used
+    included_contigs = [first_step[0]]
+    reference_position = 0
+    query_position = 0
+    n_gaps, n_merges = 0,0 # Count how many gaps and merges we make
 
     for ovl in path:
+        # Next, iterate over the steps in the path. At each path, add sequence
+        # corresponding to the alignment and remaining query sequence, or if there
+        # is no alignment, add sequence corresponding to the gap and the whole
+        # query sequence.
+        r_name, q_name = ovl[0], ovl[2]
+        r_ori, q_ori = ovl[1], ovl[3]
+        aln = ovl[4]
+        seq1, seq2 = trimmed_fasta[r_name], trimmed_fasta[q_name]
 
-        #print("\nNow merging: ", ovl, str(ovl[4]))
-        consensus, query_pos, gap_bool = createConsensus(ovl, trimmed_fasta[ovl[0]], trimmed_fasta[ovl[2]])
+        # If there is an alignment at this step in the path, remove bases from
+        # the merged sequence from where the alignment starts and onwards
+        if aln:
+            bases_to_trim = len(trimmed_fasta[r_name]) - aln.r_st
+            if bases_to_trim > 0:
+                merged_sequence = merged_sequence[:-bases_to_trim]
+            else:
+                # If we got here it means that the whole reference sequence is
+                # in the alignment. In this case, we cannot simply remove the
+                # number of bases in the merged sequence that correspond to the
+                # query length, because the query may already have been aligned
+                # into the merged sequence. Instead, recalculate the alignment from
+                # the merged sequence.
+                suffix_overlaps, prefix_overlaps = findOverlap(merged_sequence, trimmed_fasta[q_name])
+                # We are only interested in suffix_overlaps in the expected
+                # orientation of query
+                exp_ori = 1 if q_ori == "+" else -1
+                suffix_overlaps = [sovl for sovl in suffix_overlaps if sovl.strand == exp_ori]
 
-        # Add bases from previous step's q_st
-        merged_sequence = merged_sequence[:-coords_to_trim1] + consensus[coords_to_trim2:]
+                # If more than one overlap, use the longest one
+                if len(suffix_overlaps) > 0:
+                    best_ovl = suffix_overlaps[0]
+                    for sovl in suffix_overlaps[1:]:
+                        ovl_dist = sovl.blen
+                        if ovl_dist > best_ovl.blen:
+                            best_ovl = sovl
 
-        coords_to_trim1 = len(trimmed_fasta[ovl[2]]) - query_pos
-        coords_to_trim2 = query_pos
-        included_contigs.append(ovl[2])
+                    r_name, r_ori = "tmp", "+"
+                    seq1 = merged_sequence
 
-        # Count
+                else:
+                    aln = None
+
+        consensus, gap_bool, ovl_len = createConsensus( (r_name, r_ori, \
+                                                        q_name, q_ori, aln), \
+                                                        seq1, seq2, gapsize)
+
+        # Count & update bed coords
         if gap_bool == True:
             n_gaps += 1
         else:
             n_merges += 1
+            bed_coords.append( (str(len(merged_sequence)+1), \
+                                str(len(merged_sequence)+ovl_len+1), \
+                                "overlap", "0", q_ori, \
+                                str(len(merged_sequence)+1), \
+                                str(len(merged_sequence)+ovl_len+1), "255,0,0"))
 
-    return merged_sequence, included_contigs, n_gaps, n_merges
+        # Extend merged_sequence by the new consensus
+        merged_sequence += consensus
+        included_contigs.append(q_name)
+        # Append seq2 to bed_coords
+        bed_coords.append( (str(len(merged_sequence)-len(seq2)+1), \
+                            str(len(merged_sequence)+1), \
+                            q_name, "0", q_ori, \
+                            str(len(merged_sequence)-len(seq2)+1), \
+                            str(len(merged_sequence)+1), "0,0,255" ) )
 
-def combine_paths(linkpath, contigs):
+    return merged_sequence, included_contigs, n_gaps, n_merges, bed_coords
+
+def combine_paths(linkpath):
     '''Find if each junction in linkpath can be merged by alignment or gap
     introduction. Return a path where each step is a tuple describing the
     potential overlap.
@@ -594,11 +750,9 @@ def combine_paths(linkpath, contigs):
     Args:
         linkpath (list): list of graph_building.Junction objects to be combined
             into a scaffold.
-        contigs (dict): fasta in dict format. Keys: contig names, values: trimmed
-            sequences.
 
     Returns:
-        path (list): List of steps in the path. Each step is a tuple looking like:
+        filled_path (list): List of steps in the path. Each step is a tuple looking like:
             ('tig1_name', 'tig1_dir', 'tig2_name', 'tig2_dir', <mappy.Alignment object>),
             where dirs are either "+" or "-". If <mappy.Alignment object> is None,
             scaffold by gap introduction.
@@ -607,84 +761,159 @@ def combine_paths(linkpath, contigs):
     filled_path = []
     all_edges = []
     for junction in linkpath:
+        # Take a different route if there is a None in the junction
+        if junction.start and junction.target:
+            # Extract all sequences in this junction to a separate dict
+            to_overlap = {  junction.start[:-1]: trimmed_fasta[junction.start[:-1]], \
+                            junction.target[:-1]: trimmed_fasta[junction.target[:-1]]}
+            for conn in junction.connections:
+                to_overlap[conn] = trimmed_fasta[conn]
 
-        to_overlap = {  junction.start[:-1]: contigs[junction.start[:-1]], \
-                        junction.target[:-1]: contigs[junction.target[:-1]]}
-        for conn in junction.connections:
-            to_overlap[conn] = contigs[conn]
+            ref_dir = "+" if junction.start[-1] == "e" else "-"
+            target_dir = "-" if junction.target[-1] == "e" else "+"
+            # Find which direction to traverse the graph in.
+            if ref_dir == "-":
+                to_overlap[junction.start[:-1]] = nt.reverse_complement(to_overlap[junction.start[:-1]])
 
-        # Build an overlap graph
-        edges = findOverlaps(to_overlap)
-        all_edges = all_edges + edges
-        graph = Overlapgraph(list(to_overlap.keys()),edges)
+            # Find all overlaps between sequences in question and if any are found,
+            # create an overlap graph to describe them.
+            edges = findOverlaps(to_overlap)
+            if edges:
+                all_edges = all_edges + edges
+                graph = Overlapgraph(   set(to_overlap.keys()), \
+                                        set(edges))
 
-        # Find which orientation to look for
-        if junction.start[-1] == "s":
-            to_overlap[junction.start[:-1]] = nt.reverse_complement(to_overlap[junction.start[:-1]])
-            ref_dir = "-"
+                # Try to find a path between start and target
+                # Partial paths are also saved in the graph
+                graph.traverse( junction.start[:-1], ref_dir, \
+                                junction.target[:-1], target_dir)
+
+                if len(graph.paths) == 1:
+                    # If one path, use it right away
+                    bestpath = list(graph.paths)[0]
+
+                elif len(graph.paths) > 1:
+                    # If there is more than one path, find the shortest path
+                    bestpath = shortestPath(graph.paths)
+
+                else:
+                    # If no path, try to find incomplete paths
+                    # Find partial paths also starting from target
+                    def reverse_ori(ori):
+                        return "+" if ori == "-" else "-"
+
+                    graph.traverse( junction.target[:-1], \
+                                    reverse_ori(target_dir), \
+                                    junction.start[:-1], \
+                                    reverse_ori(ref_dir))
+                    graph.resolve_incomplete_paths( junction.start[:-1], \
+                                                    ref_dir, \
+                                                    junction.target[:-1], \
+                                                    target_dir)
+                    bestpath = shortestPath(graph.incomplete_paths)
+
+                filled_path.extend(bestpath)
+            else:
+                # If no edges, put None at overlap and drop any connections
+                filled_path.append( (junction.start[:-1], ref_dir, \
+                                    junction.target[:-1], target_dir, None))
+
+        # If there is a None in the junction
         else:
-            ref_dir = "+"
+            if junction.start:
+                to_overlap = {junction.start[:-1]: trimmed_fasta[junction.start[:-1]]}
+                for conn in junction.connections:
+                    to_overlap[conn] = trimmed_fasta[conn]
+                ref_dir = "+" if junction.start[-1] == "e" else "-"
+                # Find which direction to traverse the graph in.
+                if ref_dir == "-":
+                    to_overlap[junction.start[:-1]] = nt.reverse_complement(to_overlap[junction.start[:-1]])
+                edges = findOverlaps(to_overlap)
+                if edges:
+                    all_edges = all_edges + edges
+                    graph = Overlapgraph(   set(to_overlap.keys()), \
+                                            set(edges))
 
-        if junction.target[-1] == "e":
-            target_dir = "-"
-        else:
-            target_dir = "+"
+                    # Try to find partial paths extending from start
+                    # We can use graph.traverse for this by defining a target
+                    # that's not in the graph, i.e. complete paths will be
+                    # impossible to find
+                    graph.traverse( junction.start[:-1], ref_dir, \
+                                    "not_a_target", "+")
 
-        # Find a path between start and target
-        graph.traverse(junction.start[:-1],ref_dir, junction.target[:-1], target_dir)
+                    if graph.partial_paths:
+                        bestpath = shortestPath(graph.partial_paths)
+                        filled_path.extend(bestpath)
 
-        if graph.paths != []:
-            bestpath = shortestPath(graph.paths)
-        else:
-            # Find partial paths starting from target
-            def reverse_ori(ori):
-                return "+" if ori == "-" else "-"
+            elif junction.target:
+                #if junction.target == "8e":
+                #    import ipdb; ipdb.set_trace()
+                # Same as above, except in the opposite direction
+                to_overlap = {junction.target[:-1]: trimmed_fasta[junction.target[:-1]]}
+                for conn in junction.connections:
+                    to_overlap[conn] = trimmed_fasta[conn]
+                #target_dir = "-" if junction.target[-1] == "e" else "+"
+                target_dir = "+" if junction.target[-1] == "e" else "-"
+                if target_dir == "-":
+                    to_overlap[junction.target[:-1]] = nt.reverse_complement(to_overlap[junction.target[:-1]])
+                edges = findOverlaps(to_overlap)
+                if edges:
+                    all_edges = all_edges + edges
+                    graph = Overlapgraph(   set(to_overlap.keys()), \
+                                            set(edges))
+                    graph.traverse( junction.target[:-1], target_dir, \
+                                "not_a_target", "+")
+                    if graph.partial_paths:
+                        # If there is a partial_path, we need to reverse it
+                        # and add it to the beginning of filled_path
+                        reversed_paths = [graph.reverse_path(path) for path in graph.partial_paths]
+                        # Remove None's, in separate step to avoid calculating
+                        # non-existent paths twice
+                        reversed_paths = [p for p in reversed_paths if p]
 
-            graph.traverse(junction.target[:-1],reverse_ori(target_dir), junction.start[:-1], reverse_ori(ref_dir))
-            graph.resolve_incomplete_paths(junction.start[:-1], ref_dir, junction.target[:-1], target_dir)
-            bestpath = shortestPath(graph.incomplete_paths)
-        filled_path.append(bestpath)
-    filled_path = [ step for partial_path in filled_path for step in partial_path]
+                        if reversed_paths:
+                            bestpath = shortestPath(reversed_paths)
+                            filled_path = bestpath + filled_path
 
     return filled_path, all_edges
 
-def build_scaffolds(paths):
+def build_scaffolds(paths, gapsize):
     scaffold_sequences, scaffold_correspondences = {}, {}
     all_edges = []
     n_gaps, n_merges = 0,0
     misc.printstatus("Number of paths: "+str(len(paths)))
+    bed = {} # To collect bed coordinates
 
     for idx, path in enumerate(paths):
         misc.printstatusFlush("[ SCAFFOLDING ]\t" + misc.reportProgress(idx+1, len(paths)))
 
-        # Skip unknown ending contigs, for now
-        # Also avoid two listcomps...
-        if None in [ junction.start for junction in path] \
-        or None in [ junction.target for junction in path]:
-            continue
-
         # Collect all relevant sequences from fasta
         linked_contigs = [ [junction.start[:-1], junction.target[:-1]] + \
-                            junction.connections for junction in path]
+                            junction.connections for junction in path \
+                            if junction.start and junction.target]
         linked_contigs = [ step for partial_path in linked_contigs for step in partial_path]
-        to_overlap = { k:v for k,v in trimmed_fasta.items() if k in linked_contigs}
 
         # Start overlapping
-        filled_path, edges = combine_paths(path, to_overlap)
-        all_edges.append(edges)
+        filled_path, edges = combine_paths(path)
+        # It is possible that there is no filled_path, in the case that the
+        # path had a single junction which had a None at junction.start or
+        # junction.target and no overlaps were found. In this case, continue.
+        if filled_path:
+            all_edges.extend(edges)
 
-        # Create scaffold
-        scaffold_sequence, included, ng, nm = mergeSeq(filled_path)
-        scaffold_sequences["scaffold_"+str(idx)] = scaffold_sequence
-        scaffold_correspondences["scaffold_"+str(idx)] = included
-        n_gaps += ng
-        n_merges += nm
+            # Create scaffold
+            scaffold_sequence, included, ng, nm, bed_coords = mergeSeq(filled_path, gapsize)
+            scaffold_sequences["scaffold_"+str(idx)] = scaffold_sequence
+            scaffold_correspondences["scaffold_"+str(idx)] = included
+            bed["scaffold_"+str(idx)] = bed_coords
+            n_gaps += ng
+            n_merges += nm
 
     misc.printstatus("[ SCAFFOLDING ]\t" + misc.reportProgress(idx+1, len(paths)))
 
-    return scaffold_sequences, scaffold_correspondences, all_edges, n_gaps, n_merges
+    return scaffold_sequences, scaffold_correspondences, all_edges, n_gaps, n_merges, bed
 
-def main(input_fasta, input_bam, paths):
+def main(input_fasta, input_bam, paths, mincov, gapsize):
     '''Controller for merge_fasta.
 
     Args:
@@ -692,6 +921,8 @@ def main(input_fasta, input_bam, paths):
         input_bam (str): Path to bam file of reads mapped to input_fasta.
         paths (list): list of lists containing graph_building.Junction objects
             describing the paths inferred previously during the pipeline.
+        mincov (int): Minimum average coverage for trimming.
+        gapsize (int): Gap size when scaffolding by gap introduction.
     Returns:
         dict: scaffolded fasta to output. Keys: fasta headers. Values: the
             resulting sequence.
@@ -705,21 +936,21 @@ def main(input_fasta, input_bam, paths):
 
     # Get trim coordinates based on read mappings in samfile
     misc.printstatus("Trimming contig ends...")
-    trimmed_fasta_coords = trimSequences(paths)
+    trimmed_fasta_coords = trimSequences(paths, mincov)
 
     # Trim fasta
     global trimmed_fasta
     trimmed_fasta = {}
     for tig in samfile.references:
         trimmed_fasta[tig] = fastafile.fetch(   reference=tig, \
-                                                start=trimmed_fasta_coords[tig][0], \
-                                                end=trimmed_fasta_coords[tig][1])
+                                            start=trimmed_fasta_coords[tig][0], \
+                                            end=trimmed_fasta_coords[tig][1])
     samfile.close()
     fastafile.close()
 
     # Start finding overlaps
     misc.printstatus("Creating scaffolds...")
-    scaffold_sequences, scaffold_correspondences, all_edges, n_gaps, n_merges = build_scaffolds(paths)
+    scaffold_sequences, scaffold_correspondences, all_edges, n_gaps, n_merges, bed = build_scaffolds(paths, gapsize)
     all_edges = [edge for ls in all_edges for edge in ls]
 
     misc.printstatus("Scaffolding completed.")
@@ -737,4 +968,4 @@ def main(input_fasta, input_bam, paths):
         scaffold_sequences["unplaced_contig_"+str(idx)] = trimmed_fasta[tig]
         scaffold_correspondences["unplaced_contig_"+str(idx)] = [tig]
 
-    return scaffold_sequences, scaffold_correspondences
+    return scaffold_sequences, scaffold_correspondences, bed

@@ -51,17 +51,34 @@ parser.add_argument("-m","--molecule_size", \
                     this size should be rare. [45000]", \
                     default = 45000, \
                     type = int)
-parser.add_argument("-n","--barcode_number", \
-                    help="Minimum number of shared barcodes to create link. [1]", \
-                    default = 1, \
-                    type = int)
-parser.add_argument("-f","--barcode_fraction", \
-                    help="Minimum fraction of shared barcodes to create link. [0.01]", \
+parser.add_argument("-F","--barcode_fraction", \
+                    help="Minimum fraction of shared barcodes to create a link. \
+                    [0.01]", \
                     default = 0.01, \
                     type = float)
+parser.add_argument("-f","--barcode_factor", \
+                    help="Factor to determine outliers. [39]", \
+                    default = 39, \
+                    type = int)
 parser.add_argument("-q","--mapq", \
-                    help="Mapping quality cutoff value. [60]", \
+                    help="Mapping quality cutoff value for linkgraph. [60]", \
                     default = 60, \
+                    type = int)
+parser.add_argument("-Q","--short_mapq", \
+                    help="Mapping quality cutoff value for pulling in short contigs. [20]", \
+                    default = 20, \
+                    type = int)
+parser.add_argument("-c","--coverage", \
+                    help="Coverage cutoff for trimming contig ends. [20]", \
+                    default = 20, \
+                    type = int)
+parser.add_argument("-g","--gapsize", \
+                    help="Gapsize for building scaffolds. [100]", \
+                    default = 100, \
+                    type = int)
+parser.add_argument("-b","--bc_quantity", \
+                    help="Cutoff for number of reads per barcode. [3]", \
+                    default = 3, \
                     type = int)
 parser.add_argument("-o","--output", \
                     help="Prefix for output files.", \
@@ -69,8 +86,7 @@ parser.add_argument("-o","--output", \
 args = parser.parse_args()
 
 def getOut():
-    '''
-    Creates a prefix for output files.
+    '''Creates a prefix for output files.
     '''
     if args.output:
         outfilename = args.output
@@ -80,46 +96,18 @@ def getOut():
         outfilename = args.input_bam.split(".bam")[0]+".anvil"
     return outfilename
 
-# Deprecated
-def formatContigs(samfile):
-    '''
-    Creates a dict where keys are contig names and values their lengths
-    '''
-    i = 0
-    gfa_header = []
-    contig_dict = {}
-    contig_list = samfile.references
-    while i < len(contig_list):
-        contig_dict[contig_list[i]] = samfile.lengths[i]
-        gfa_header.append("S\t{0}\t*\tLN:i:{1}".format(contig_list[i],samfile.lengths[i]))
-        i += 1
-
-    return contig_dict, gfa_header
-
 def writeGfa(outfilename, input_contig_lengths, graph):
+    '''Writes the link graph in gfa format.
     '''
-    Writes the graph in gfa format.
-    '''
-
     with open(outfilename + ".gfa", "w", encoding = "utf-8") as gfa:
         gfa.write("H\tVN:Z:AnVIL/link_graph\n")
         for k,v in input_contig_lengths.items():
             gfa.write("S\t{0}\t*\tLN:i:{1}\n".format(k,str(v)))
         gfa.write(formatting_tools.formatGFA(graph))
 
-# Deprecated
-def writeGfa_from_dict(gfa_header, graph):
-    '''
-    Writes the graph in gfa format.
-    '''
-    gfa_header = "H\tVN:Z:AnVIL/link_graph\n" + "\n".join(gfa_header)
-    with open(outfilename + ".gfa", "w", encoding = "utf-8") as gfa:
-        gfa.write(gfa_header+"\n")
-        gfalist = formatting_tools.formatGFA(graph)
-        for i in gfalist:
-            gfa.write(i)
-
 def writeFasta(outfilename, linked_scaffolds):
+    '''Writes fasta output.
+    '''
     with open(outfilename+".fasta","w",encoding = "utf-8") as fastaout:
         for k,v in linked_scaffolds.items():
             fastaout.write(">"+k+"\n")
@@ -140,6 +128,14 @@ def writePaths(outfilename, scaffolds):
         for k,v in scaffolds.items():
             pathsout.write("{}\t{}\n".format(k,v))
 
+def writeBed(outfilename, bed_dict):
+    ''' Write a bed file from dict.
+    '''
+    with open(outfilename+".bed", "w") as out:
+        for k,v in bed_dict.items():
+            for feature in v:
+                out.write(k+"\t"+"\t".join(feature)+"\n")
+
 def main():
     misc.printstatus("Starting AnVIL.")
 
@@ -147,8 +143,12 @@ def main():
     region_size = args.region_size
     molecule_size = args.molecule_size
     mapq = args.mapq
-    barcode_number = args.barcode_number
+    short_mapq = args.short_mapq
+    barcode_factor = args.barcode_factor
     barcode_fraction = args.barcode_fraction
+    mincov = args.coverage
+    bc_quantity = args.bc_quantity
+    gapsize = args.gapsize
 
     if region_size > molecule_size:
         misc.printstatus("Larger --region_size than --molecule_size detected. Using default values instead.")
@@ -169,13 +169,14 @@ def main():
     GEMlist = barcode_collection.main(  args.input_bam, \
                                             backbone_contig_lengths, \
                                             region_size, \
-                                            mapq)
+                                            mapq, \
+                                            bc_quantity)
 
     # Second step is to build the link graph based on the barcodes
     misc.printstatus("Creating link graph.")
     backbone_graph = graph_building.main(backbone_contig_lengths, \
                                             GEMlist, \
-                                            barcode_number, \
+                                            barcode_factor, \
                                             barcode_fraction)
 
     misc.printstatus("Writing link graph to {}.backbone.gfa.".format(outfilename))
@@ -184,6 +185,8 @@ def main():
     # Third step is to traverse the graph and build paths
     misc.printstatus("Finding paths.")
     backbone_graph.unambiguousPaths() # Fill graph.paths
+    misc.printstatus("Found {} paths.".format(len(backbone_graph.paths)))
+    writePaths(outfilename+".pre-fill", {str(idx):path for idx, path in enumerate(backbone_graph.paths)})
 
     # Fourth step is to collect the barcodes from the input bam file,
     # this time for the small contigs
@@ -191,34 +194,23 @@ def main():
     GEMlist = barcode_collection.main(  args.input_bam, \
                                             small_contig_lengths, \
                                             molecule_size, \
-                                            mapq)
+                                            short_mapq)
 
     # Fifth step is to pull in the short contigs into the linkgraph junctions,
     # if they have
     # Sixth step is to fill the junctions in the backbone_graph
     paths = fill_junctions.fillJunctions(backbone_graph, GEMlist)
 
-    '''
-    # Fifth step is to build the full link graph based on the barcodes
-    misc.printstatus("Creating full link graph.")
-    graph = graph_building.main(input_contig_lengths, \
-                                    GEMlist, \
-                                    args.barcode_number, \
-                                    args.barcode_fraction)
-
-    misc.printstatus("Writing complete link graph to {}.gfa.".format(outfilename))
-    writeGfa(outfilename, input_contig_lengths, graph)
-    '''
-
     writePaths(outfilename+".pre-merge", {str(idx):path for idx, path in enumerate(paths)})
 
     if os.path.isfile(args.input_fasta):
         # If user gave an assembly fasta file, use this for merging
-        new_scaffolds, scaffold_correspondence = merge_fasta.main(args.input_fasta, args.input_bam, paths)
         misc.printstatus("Found fasta file for merging: {}".format(args.input_fasta))
+        new_scaffolds, scaffold_correspondence, bed = merge_fasta.main(args.input_fasta, args.input_bam, paths, mincov, gapsize)
         misc.printstatus("Writing merged fasta to {0}.fasta".format(outfilename))
         writeFasta(outfilename,new_scaffolds)
         writePaths(outfilename+".correspondence", scaffold_correspondence)
+        writeBed(outfilename, bed)
 
     else:
         misc.printstatus("No fasta file found for merging. Pipeline finished.")
