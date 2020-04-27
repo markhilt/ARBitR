@@ -16,7 +16,10 @@ AnVIL is used for merging and scaffolding an existing genome assembly. It takes 
 
 AnVIL was developed for application on small genomes that have been assembled using long-read sequencing and an OLC method. Ideally, the genome size is <1Gb and the number of input contigs is <10000, though it may also be useful in other cases. E.g. it can additionally scaffold [Supernova](https://github.com/10XGenomics/supernova) assemblies of pure 10X Chromium data.
 
-### Example usage:
+## Installation
+Install dependencies using e.g. pip or conda. Then clone this repo and run AnVIL as below.
+
+## Example usage:
 ```
 ./anvil.py <in.bam> # Builds the linkgraph and outputs it as a gfa file
 ./anvil.py -i <in.fasta> <in.bam> # Builds the linkgraph and uses it to merge the contigs in <in.fasta>
