@@ -1,4 +1,14 @@
+"""nuclseqTools
+
+nuclseqTools handles functions related to nucleotide strings during the anvil pipeline.
+
+Copyright (c) 2020, Markus Hiltunen
+Licensed under the GPL3 license. See LICENSE file.
+"""
+
 def reverse_complement(nuclstring):
+    '''Reverse complement argument nucleotide string.
+    '''
     rev_comped = ""
     for l in reversed(nuclstring):
         if l == "A" or l == "a":
@@ -13,6 +23,7 @@ def reverse_complement(nuclstring):
             rev_comped += "N"
     return rev_comped
 
+# Deprecated
 def createConsensus(delta,string1,string2):
     '''
     Given two overlapping nucleotide strings (excluding overhangs) and alignment information,

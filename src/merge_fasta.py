@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""
-.. module:: merge_fasta
-    :synopsis: merge_fasta implements functions related to fasta file operations
-     during the anvil pipeline.
+"""merge_fasta
 
-Copyright (c) 2019, Johannesson lab
+merge_fasta implements functions related to fasta file and nucleotide string
+operations during the anvil pipeline.
+
+Copyright (c) 2020, Markus Hiltunen
 Licensed under the GPL3 license. See LICENSE file.
 """
 
@@ -15,7 +15,6 @@ import pysam
 from scipy.stats import t
 import mappy as mp
 
-# Included modules
 import nuclseqTools as nt
 import misc
 
@@ -30,14 +29,19 @@ class Overlapgraph:
         self.edges = edges # {(node1, node1_ori, node2, node2_ori, mappy.Alignment), ... }
         self.paths = [] # Paths through the graph. Called externally.
         self.partial_paths = [] # Also keep partial paths
-        self.incomplete_paths = []   # Combinations of partial paths with None at
-                                        # the gap position
+        self.incomplete_paths = []  # Combinations of partial paths with None at
+                                    # the gap position
 
     def __str__(self):
-        return "Overlapgraph([{0} nodes, {1} edges, {2} complete paths, {3} incomplete_paths])".format( len(self.nodes), \
-                                                                    len(self.edges), \
-                                                                    len(self.paths), \
-                                                                    len(self.incomplete_paths))
+        return "Overlapgraph([\
+                {0} nodes, \
+                {1} edges, \
+                {2} complete paths, \
+                {3} incomplete_paths])".format( \
+                len(self.nodes), \
+                len(self.edges), \
+                len(self.paths), \
+                len(self.incomplete_paths))
 
     def addNode(self, node):
         '''Adds node to graph
@@ -437,7 +441,7 @@ def trimSequences(paths, mincov):
             for start and end if they were trimmed or not.
     '''
     # trimmed_fasta_coords is a dict with coords to keep from original fasta
-    # Format: {contig: [start_coord, end_coord]}
+    # Format: {contig: [start_coord, end_coord, bool, bool]}
     # Start by filling with old coords, which will then be changed
     trimmed_fasta_coords = {}
     for idx, ctg in enumerate(fastafile.references):
@@ -454,7 +458,7 @@ def trimSequences(paths, mincov):
             else:
                 start_tig, start_side = None, None
             if junction.target != None:
-                target_tig, target_side = junction.target[:-1], junction.target[:1]
+                target_tig, target_side = junction.target[:-1], junction.target[-1]
             else:
                 target_tig, target_side = None, None
             connections = junction.connections
@@ -942,15 +946,18 @@ def main(input_fasta, input_bam, paths, mincov, gapsize):
     global trimmed_fasta
     trimmed_fasta = {}
     for tig in samfile.references:
-        trimmed_fasta[tig] = fastafile.fetch(   reference=tig, \
-                                            start=trimmed_fasta_coords[tig][0], \
-                                            end=trimmed_fasta_coords[tig][1])
+        trimmed_fasta[tig] = fastafile.fetch(reference=tig, \
+                                             start=trimmed_fasta_coords[tig][0], \
+                                             end=trimmed_fasta_coords[tig][1])
     samfile.close()
     fastafile.close()
 
     # Start finding overlaps
     misc.printstatus("Creating scaffolds...")
-    scaffold_sequences, scaffold_correspondences, all_edges, n_gaps, n_merges, bed = build_scaffolds(paths, gapsize)
+
+    scaffold_sequences, scaffold_correspondences, all_edges, \
+    n_gaps, n_merges, bed = build_scaffolds(paths, gapsize)
+
     all_edges = [edge for ls in all_edges for edge in ls]
 
     misc.printstatus("Scaffolding completed.")

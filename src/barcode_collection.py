@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""
-.. module:: barcode_collection
-    :synopsis: barcode_collection implements methods to search the input
-    bam file for reads and extract their barcodes.
+"""barcode_collection
 
-Copyright (c) 2019, Johannesson lab
+barcode_collection implements methods to search the input
+bam file for reads and extract their barcodes.
+
+Copyright (c) 2020, Markus Hiltunen
 Licensed under the GPL3 license. See LICENSE file.
 """
 
@@ -87,9 +87,11 @@ def main(input_bam, contig_dict, region_size=20000, mapq=60, bc_quant = 2):
         # backbone or on small contigs.
         if idx in range(0,100000000,20):
             if region[-1] == "a":
-                misc.printstatusFlush("[ BARCODE COLLECTION ]\t"+misc.reportProgress(idx, len(contig_dict.keys())))
+                misc.printstatusFlush("[ BARCODE COLLECTION ]\t" + \
+                misc.reportProgress(idx, len(contig_dict.keys())))
             else:
-                misc.printstatusFlush("[ BARCODE COLLECTION ]\t"+misc.reportProgress(idx, len(contig_dict.keys())*2))
+                misc.printstatusFlush("[ BARCODE COLLECTION ]\t" + \
+                misc.reportProgress(idx, len(contig_dict.keys())*2))
 
         # Collect barcodes from the window
         GEMs = collectGEMs( (contig, start, end), mapq, bc_quant)
@@ -99,9 +101,11 @@ def main(input_bam, contig_dict, region_size=20000, mapq=60, bc_quant = 2):
             GEMlist[region] = GEMs
 
     if region[-1] == "a":
-        misc.printstatus("[ BARCODE COLLECTION ]\t"+misc.reportProgress(len(contig_dict.keys()), len(contig_dict.keys())))
+        misc.printstatus("[ BARCODE COLLECTION ]\t" + \
+        misc.reportProgress(len(contig_dict.keys()), len(contig_dict.keys())))
     else:
-        misc.printstatus("[ BARCODE COLLECTION ]\t"+misc.reportProgress(len(contig_dict.keys())*2, len(contig_dict.keys())*2))
+        misc.printstatus("[ BARCODE COLLECTION ]\t" + \
+        misc.reportProgress(len(contig_dict.keys())*2, len(contig_dict.keys())*2))
     samfile.close()
 
     return GEMlist

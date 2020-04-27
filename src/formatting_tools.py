@@ -1,3 +1,10 @@
+"""
+.. module:: formatting_tools.py
+
+Copyright (c) 2020, Markus Hiltunen
+Licensed under the GPL3 license. See LICENSE file.
+"""
+
 def formatTable(dict1):
     '''
     To format a 2-dimensional dictionary to a human readable table

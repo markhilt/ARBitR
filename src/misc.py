@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""
-.. module:: misc
-    :synopsis: misc implements various functions used during the anvil pipeline.
+"""misc
 
-Copyright (c) 2019, Johannesson lab
+misc implements various functions used during the anvil pipeline.
+
+Copyright (c) 2020, Markus Hiltunen
 Licensed under the GPL3 license. See LICENSE file.
 """
 
@@ -28,6 +28,8 @@ def printstatusFlush(msg):
 def reportProgress(current,total):
     return "Completed: {0}% ({1} out of {2})".format( str(round( (current / total) * 100, 2)), current, total)
 
+
+# Deprecated
 def readPaths(paths):
     '''
     Reads externally provided paths file for scaffolding.

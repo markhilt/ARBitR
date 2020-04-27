@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""
-.. module:: graph_building
-    :synopsis: graph_building describes the Linkgraph class and implements
-    functions related to graph building during the anvil pipeline.
+"""graph_building
 
-Copyright (c) 2019, Johannesson lab
+graph_building describes the Linkgraph class and implements
+functions related to graph building during the anvil pipeline.
+
+Copyright (c) 2020, Markus Hiltunen
 Licensed under the GPL3 license. See LICENSE file.
 """
 
@@ -15,7 +15,6 @@ import numpy as np
 import pandas as pd
 
 import nuclseqTools as nt
-#import calcESD as esd
 import misc
 
 class Junction:

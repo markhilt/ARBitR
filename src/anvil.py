@@ -1,16 +1,15 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""
-anvil.py
-Version 0.1
+"""AnVIL
+
 Author: Markus Hiltunen
 E-mail: markus.hiltunen@ebc.uu.se
 
-Description: Controller of the AnVIL script collection. This script controls the
+Description: Controller of the AnVIL pipeline. This script controls the
 parameters and workflow of AnVIL.
 
-Copyright (c) 2019, Johannesson lab
+Copyright (c) 2020, Markus Hiltunen
 Licensed under the GPL3 license. See LICENSE file.
 """
 
@@ -29,9 +28,15 @@ import misc
 import merge_fasta
 import fill_junctions
 
+from _version import __version__
+
 parser = argparse.ArgumentParser(description="Reads a bam file, creates links \
                                             between contigs based on linked read \
                                             information, and outputs a .gfa.")
+parser.add_argument("-v","--version", \
+                    help="Print version and exit.", \
+                    action="version", \
+                    version = "AnVIL v. {}".format(__version__))
 parser.add_argument("input_bam", \
                     help="Input bam file. Required.", \
                     type = str)
@@ -68,6 +73,10 @@ parser.add_argument("-Q","--short_mapq", \
                     help="Mapping quality cutoff value for pulling in short contigs. [20]", \
                     default = 20, \
                     type = int)
+parser.add_argument("-B","--short_bc_quant", \
+                    help="Minimum number of reads per barcode. [2]", \
+                    default = 2, \
+                    type = int)
 parser.add_argument("-c","--coverage", \
                     help="Coverage cutoff for trimming contig ends. [20]", \
                     default = 20, \
@@ -77,7 +86,7 @@ parser.add_argument("-g","--gapsize", \
                     default = 100, \
                     type = int)
 parser.add_argument("-b","--bc_quantity", \
-                    help="Cutoff for number of reads per barcode. [3]", \
+                    help="Minimum number of reads per barcode. [3]", \
                     default = 3, \
                     type = int)
 parser.add_argument("-o","--output", \
@@ -113,13 +122,6 @@ def writeFasta(outfilename, linked_scaffolds):
             fastaout.write(">"+k+"\n")
             fastaout.write(v+"\n")
 
-# Not used
-def writeTSV(gfa_header, graph):
-    '''
-    Writes the graph in tsv format, compatible with LINKS.
-    TODO
-    '''
-
 def writePaths(outfilename, scaffolds):
     '''
     Writes the usable paths from the graph
@@ -144,6 +146,7 @@ def main():
     molecule_size = args.molecule_size
     mapq = args.mapq
     short_mapq = args.short_mapq
+    short_bc_quant = args.short_bc_quant
     barcode_factor = args.barcode_factor
     barcode_fraction = args.barcode_fraction
     mincov = args.coverage
@@ -151,7 +154,8 @@ def main():
     gapsize = args.gapsize
 
     if region_size > molecule_size:
-        misc.printstatus("Larger --region_size than --molecule_size detected. Using default values instead.")
+        misc.printstatus(   "Larger --region_size than --molecule_size detected. \
+                            Using default values instead.")
         region_size, molecule_size = 20000, 45000
 
     outfilename = getOut() # Create a prefix for output files
@@ -161,8 +165,12 @@ def main():
 
     # Split dataset into backbone and small contigs
     misc.printstatus("Collecting contigs.")
-    backbone_contig_lengths = { ctg:length for ctg, length in input_contig_lengths.items() if length > molecule_size}
-    small_contig_lengths = {k:input_contig_lengths[k] for k in input_contig_lengths.keys() - backbone_contig_lengths.keys()}
+    backbone_contig_lengths = { ctg:length for ctg, length \
+                                in input_contig_lengths.items() \
+                                if length > molecule_size}
+    small_contig_lengths = {    k:input_contig_lengths[k] \
+                                for k in input_contig_lengths.keys() \
+                                - backbone_contig_lengths.keys()}
 
     # First step is to collect the barcodes for the backbone graph
     misc.printstatus("Collecting barcodes for linkgraph.")
@@ -186,7 +194,8 @@ def main():
     misc.printstatus("Finding paths.")
     backbone_graph.unambiguousPaths() # Fill graph.paths
     misc.printstatus("Found {} paths.".format(len(backbone_graph.paths)))
-    writePaths(outfilename+".pre-fill", {str(idx):path for idx, path in enumerate(backbone_graph.paths)})
+    writePaths( outfilename+".pre-fill", \
+                {str(idx):path for idx, path in enumerate(backbone_graph.paths)})
 
     # Fourth step is to collect the barcodes from the input bam file,
     # this time for the small contigs
@@ -194,19 +203,27 @@ def main():
     GEMlist = barcode_collection.main(  args.input_bam, \
                                             small_contig_lengths, \
                                             molecule_size, \
-                                            short_mapq)
+                                            short_mapq, \
+                                            short_bc_quant)
 
     # Fifth step is to pull in the short contigs into the linkgraph junctions,
     # if they have
     # Sixth step is to fill the junctions in the backbone_graph
     paths = fill_junctions.fillJunctions(backbone_graph, GEMlist)
 
-    writePaths(outfilename+".pre-merge", {str(idx):path for idx, path in enumerate(paths)})
+    writePaths( outfilename+".pre-merge", \
+                {str(idx):path for idx, path in enumerate(paths)})
 
     if os.path.isfile(args.input_fasta):
         # If user gave an assembly fasta file, use this for merging
         misc.printstatus("Found fasta file for merging: {}".format(args.input_fasta))
-        new_scaffolds, scaffold_correspondence, bed = merge_fasta.main(args.input_fasta, args.input_bam, paths, mincov, gapsize)
+        new_scaffolds, \
+        scaffold_correspondence, \
+        bed = merge_fasta.main( args.input_fasta, \
+                                args.input_bam, \
+                                paths, \
+                                mincov, \
+                                gapsize)
         misc.printstatus("Writing merged fasta to {0}.fasta".format(outfilename))
         writeFasta(outfilename,new_scaffolds)
         writePaths(outfilename+".correspondence", scaffold_correspondence)

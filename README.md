@@ -31,4 +31,4 @@ AnVIL works in three steps: (1) backbone graph creation, (2) filling of junction
 AnVIL is written and implemented in Python 3.
 
 ## Known limitations
-AnVIL is highly dependent on high-quality read mappings. It is recommended to run [Pilon](https://github.com/broadinstitute/pilon) before AnVIL, and use the "align" program of [Longranger](https://github.com/10XGenomics/longranger) for mapping linked reads. As always, collapsed repeats are difficult to handle, and may appear to link together unrelated contigs. Short contigs made up entirely of repeats will be impossible to link because of the lack of seeding regions.
+AnVIL is highly dependent on high-quality read mappings. It is recommended to run [Pilon](https://github.com/broadinstitute/pilon) before AnVIL, and use the "align" program of [Longranger](https://github.com/10XGenomics/longranger) or [EMA](https://github.com/arshajii/ema) for mapping linked reads. As always, collapsed repeats are difficult to handle, and may appear to link together unrelated contigs. Short contigs made up entirely of repeats will be impossible to link because of the lack of seeding regions.
