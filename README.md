@@ -20,8 +20,8 @@ Install dependencies using e.g. pip or conda. Then clone this repo and run ARBit
 
 ## Example usage:
 ```
-./anvil.py <in.bam> # Builds the linkgraph and outputs it as a gfa file
-./anvil.py -i <in.fasta> <in.bam> # Builds the linkgraph and uses it to merge the contigs in <in.fasta>
+./arbitr.py <in.bam> # Builds the linkgraph and outputs it as a gfa file
+./arbitr.py -i <in.fasta> <in.bam> # Builds the linkgraph and uses it to merge the contigs in <in.fasta>
 ```
 
 ## Output
