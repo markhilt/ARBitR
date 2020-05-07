@@ -1,6 +1,6 @@
 """nuclseqTools
 
-nuclseqTools handles functions related to nucleotide strings during the anvil pipeline.
+nuclseqTools handles functions related to nucleotide strings during the ARBitR pipeline.
 
 Copyright (c) 2020, Markus Hiltunen
 Licensed under the GPL3 license. See LICENSE file.

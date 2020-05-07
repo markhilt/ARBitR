@@ -1,5 +1,6 @@
-"""
-.. module:: formatting_tools.py
+"""formatting_tools
+
+Functions to reformat objects for writing them to files.
 
 Copyright (c) 2020, Markus Hiltunen
 Licensed under the GPL3 license. See LICENSE file.

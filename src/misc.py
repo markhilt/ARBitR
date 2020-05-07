@@ -3,7 +3,7 @@
 
 """misc
 
-misc implements various functions used during the anvil pipeline.
+misc implements various functions used during the ARBitR pipeline.
 
 Copyright (c) 2020, Markus Hiltunen
 Licensed under the GPL3 license. See LICENSE file.

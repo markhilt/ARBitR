@@ -4,7 +4,7 @@
 """merge_fasta
 
 merge_fasta implements functions related to fasta file and nucleotide string
-operations during the anvil pipeline.
+operations during the ARBitR pipeline.
 
 Copyright (c) 2020, Markus Hiltunen
 Licensed under the GPL3 license. See LICENSE file.

@@ -4,7 +4,7 @@
 """graph_building
 
 graph_building describes the Linkgraph class and implements
-functions related to graph building during the anvil pipeline.
+functions related to graph building during the ARBitR pipeline.
 
 Copyright (c) 2020, Markus Hiltunen
 Licensed under the GPL3 license. See LICENSE file.
@@ -18,7 +18,7 @@ import nuclseqTools as nt
 import misc
 
 class Junction:
-    '''This class describes an AnVIL "junction". This is a part of a Linkgraph path
+    '''This class describes an ARBitR "junction". This is a part of a Linkgraph path
     where there is a known start and target node and their orientations are known.
     Then there can be one or more connected nodes of unknown orientation.
     '''
