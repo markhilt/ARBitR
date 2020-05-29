@@ -1,6 +1,6 @@
 # ARBitR
 
-ARBitR is an overlap aware genome assembly scaffolder for 10X Chromium linked reads.
+ARBitR is an overlap aware genome assembly scaffolder for 10X Chromium linked reads. A preprint describing the application is now out: https://doi.org/10.1101/2020.04.29.065847
 
 ## Dependencies
 - Python3
