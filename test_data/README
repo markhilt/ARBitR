@@ -1,0 +1,8 @@
+# ARBitR test data
+
+This is a test dataset for ARBitR. It was created from the _E. coli_ reference genome by breaking the contig. 10X Chromium linked reads were simulated from the reference genome using [LRSIM](https://github.com/aquaskyline/LRSIM) and mapped to the broken contigs with [bwa mem](http://bio-bwa.sourceforge.net/). To reduce file size, reads mapped elsewhere than the first and last 20kb of each contig were discarded.
+
+Example usage:
+```bash
+python arbitr.py -m 12000 -s 5000 -i ecoli.broken.fasta -o ecoli.test_data ecoli.broken.bam
+```
