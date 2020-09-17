@@ -32,6 +32,14 @@ ARBitR works in three steps: (1) backbone graph creation, (2) filling of junctio
 
 ARBitR is written and implemented in Python 3.
 
+## stLFR support
+Starting from v0.2, ARBitR supports [stLFR](https://pubmed.ncbi.nlm.nih.gov/30940689/) linked reads. After [stLFR reads have been demultiplexed](https://github.com/stLFR/stLFR_read_demux), the read barcodes have to be moved to the BX tag as a fastq comment. The ARBitR script ARBitR/util/convert_fastq.py can be used for this purpose (for both forward and reverse reads, if in separate files). Then map as usual, e.g:
+```
+./util/convert_fastq.py <reads>_R1.fastq | pigz > <reads>_converted_R1.fastq.gz
+./util/convert_fastq.py <reads>_R2.fastq | pigz > <reads>_converted_R2.fastq.gz
+bwa mem -t15 -C -M genome.fa <reads>_converted_R1.fastq.gz <reads>_converted_R2.fastq.gz | samtools view -@15 -bS - | samtools sort -@ 15 - -o genome.sorted.bam
+```
+
 ## Known limitations
 ARBitR is highly dependent on high-quality read mappings. It is recommended to run [Pilon](https://github.com/broadinstitute/pilon) before ARBitR, and use the "align" program of [Longranger](https://github.com/10XGenomics/longranger) or [EMA](https://github.com/arshajii/ema) for mapping linked reads. As always, collapsed repeats are difficult to handle, and may appear to link together unrelated contigs. Short contigs made up entirely of repeats will be impossible to link because of the lack of seeding regions.
 
