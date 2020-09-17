@@ -14,6 +14,9 @@ import numpy as np
 import pysam
 from scipy.stats import t
 import mappy as mp
+import multiprocessing
+import os
+import time
 
 import nuclseqTools as nt
 import misc
@@ -243,13 +246,14 @@ def findOverlap(seq1,seq2):
 
     #### First find reference suffix overlaps. We will treat seq1 as reference
     # Write seq1 to temporary fasta file
-    with open("tmp.fasta", "w") as tmpfasta:
+    pid = str(os.getpid())
+    with open(pid+".tmp.fasta", "w") as tmpfasta:
         tmpfasta.write(">tmp\n")
         tmpfasta.write(seq1)
 
     # Build index from seq1
-    #idx = mp.Aligner(fn_idx_in="tmp.fasta", preset="map-pb")#k=19, w=10, scoring=[1,4,6,26])
-    idx = mp.Aligner(fn_idx_in="tmp.fasta", preset=alignment_preset)
+    #idx = mp.Aligner(fn_idx_in=pid+"tmp.fasta", preset="asm10")#k=19, w=10, scoring=[1,4,6,26])
+    idx = mp.Aligner(fn_idx_in=pid+".tmp.fasta", preset=alignment_preset)
 
     # Align
     alignments = idx.map(seq2)
@@ -258,7 +262,6 @@ def findOverlap(seq1,seq2):
     suffix_overlaps, prefix_overlaps = [], []
     if alignments:
         for aln in alignments:
-
             # Filter for alignments starting within the first 1kb or ending
             # within the last 1 kb of seq1, and starting within the first or
             # last 1 kb of seq2
@@ -284,12 +287,12 @@ def findOverlap(seq1,seq2):
     ### Then do the same for prefix overlaps, by first reverse complementing
     # seq1
     seq1 = nt.reverse_complement(seq1)
-    with open("tmp.fasta", "w") as tmpfasta:
+    with open(pid+".tmp.fasta", "w") as tmpfasta:
         tmpfasta.write(">tmp\n")
         tmpfasta.write(seq1)
 
     #idx = mp.Aligner(fn_idx_in="tmp.fasta", preset="map-pb")#k=19, w=10, scoring=[1,4,6,26])
-    idx = mp.Aligner(fn_idx_in="tmp.fasta", preset=alignment_preset)
+    idx = mp.Aligner(fn_idx_in=pid+".tmp.fasta", preset=alignment_preset)
     alignments = idx.map(seq2)
     prefix_overlaps = []
     if alignments:
@@ -308,6 +311,16 @@ def findOverlap(seq1,seq2):
                 if aln.q_en > len(seq2)-1000 and aln.strand == -1:
                     prefix_overlaps.append(aln)
 
+    # Finally go through the overlaps and if there are more than X, return only
+    # the X longest
+    '''
+    if len(suffix_overlaps) > 3:
+        suffix_overlaps.sort(key=lambda ovl: ovl.mlen, reverse = True)
+        suffix_overlaps = suffix_overlaps[:3]
+    if len(prefix_overlaps) > 3:
+        prefix_overlaps.sort(key=lambda ovl: ovl.mlen, reverse = True)
+        prefix_overlaps = prefix_overlaps[:3]
+    '''
     return suffix_overlaps, prefix_overlaps
 
 def findOverlaps(fasta):
@@ -775,9 +788,10 @@ def combine_paths(linkpath):
 
             ref_dir = "+" if junction.start[-1] == "e" else "-"
             target_dir = "-" if junction.target[-1] == "e" else "+"
+
             # Find which direction to traverse the graph in.
-            if ref_dir == "-":
-                to_overlap[junction.start[:-1]] = nt.reverse_complement(to_overlap[junction.start[:-1]])
+            #if ref_dir == "-":
+            #    to_overlap[junction.start[:-1]] = nt.reverse_complement(to_overlap[junction.start[:-1]])
 
             # Find all overlaps between sequences in question and if any are found,
             # create an overlap graph to describe them.
@@ -850,8 +864,6 @@ def combine_paths(linkpath):
                         filled_path.extend(bestpath)
 
             elif junction.target:
-                #if junction.target == "8e":
-                #    import ipdb; ipdb.set_trace()
                 # Same as above, except in the opposite direction
                 to_overlap = {junction.target[:-1]: trimmed_fasta[junction.target[:-1]]}
                 for conn in junction.connections:
@@ -917,7 +929,56 @@ def build_scaffolds(paths, gapsize):
 
     return scaffold_sequences, scaffold_correspondences, all_edges, n_gaps, n_merges, bed
 
-def main(input_fasta, input_bam, paths, mincov, gapsize):
+def process_scaffold(path):
+    gapsize = 100
+    # Collect all relevant sequences from fasta
+    linked_contigs = [ [junction.start[:-1], junction.target[:-1]] + \
+                        junction.connections for junction in path \
+                        if junction.start and junction.target]
+    linked_contigs = [ step for partial_path in linked_contigs for step in partial_path]
+
+    # Start overlapping
+    filled_path, edges = combine_paths(path)
+    # It is possible that there is no filled_path, in the case that the
+    # path had a single junction which had a None at junction.start or
+    # junction.target and no overlaps were found. In this case, continue.
+    if filled_path:
+        #all_edges.extend(edges)
+
+        # Create scaffold
+        scaffold_sequence, included, ng, nm, bed_coords = mergeSeq(filled_path, gapsize)
+        return (scaffold_sequence, included, ng, nm, bed_coords)
+
+def mp_build_scaffolds(paths, gapsize, n_proc):
+    scaffold_sequences, scaffold_correspondences = {}, {}
+    all_edges = []
+    n_gaps, n_merges = 0,0
+    misc.printstatus("Number of paths: "+str(len(paths)))
+    bed = {} # To collect bed coordinates
+
+    pool = multiprocessing.Pool(n_proc)
+    result = pool.map_async(process_scaffold, paths)
+
+    while not result.ready():
+        misc.printstatusFlush("[ SCAFFOLDING ]\t" + misc.reportProgress(len(paths)-result._number_left, len(paths)))
+        time.sleep(4)
+
+    # Get the result and remove Nones.
+    mp_output = [i for i in result.get() if i]
+    misc.printstatus("[ SCAFFOLDING ]\t" + misc.reportProgress(len(paths), len(paths)))
+
+    # Unpack multiprocessing data results
+    for idx, dat in enumerate(mp_output):
+        scaffold_sequence, included, ng, nm, bed_coords = dat[0], dat[1], dat[2], dat[3], dat[4]
+        scaffold_sequences["scaffold_"+str(idx)] = scaffold_sequence
+        scaffold_correspondences["scaffold_"+str(idx)] = included
+        bed["scaffold_"+str(idx)] = bed_coords
+        n_gaps += ng
+        n_merges += nm
+
+    return scaffold_sequences, scaffold_correspondences, all_edges, n_gaps, n_merges, bed
+
+def main(input_fasta, input_bam, paths, mincov, gapsize, n_proc):
     '''Controller for merge_fasta.
 
     Args:
@@ -927,6 +988,7 @@ def main(input_fasta, input_bam, paths, mincov, gapsize):
             describing the paths inferred previously during the pipeline.
         mincov (int): Minimum average coverage for trimming.
         gapsize (int): Gap size when scaffolding by gap introduction.
+        n_proc (int): Number of processes to run during scaffolding.
     Returns:
         dict: scaffolded fasta to output. Keys: fasta headers. Values: the
             resulting sequence.
@@ -955,8 +1017,12 @@ def main(input_fasta, input_bam, paths, mincov, gapsize):
     # Start finding overlaps
     misc.printstatus("Creating scaffolds...")
 
-    scaffold_sequences, scaffold_correspondences, all_edges, \
-    n_gaps, n_merges, bed = build_scaffolds(paths, gapsize)
+    if n_proc == 1:
+        scaffold_sequences, scaffold_correspondences, all_edges, \
+        n_gaps, n_merges, bed = build_scaffolds(paths, gapsize)
+    else:
+        scaffold_sequences, scaffold_correspondences, all_edges, \
+        n_gaps, n_merges, bed = mp_build_scaffolds(paths, gapsize, n_proc)
 
     all_edges = [edge for ls in all_edges for edge in ls]
 

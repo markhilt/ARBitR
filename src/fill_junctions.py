@@ -17,7 +17,7 @@ import pandas as pd
 import graph_building
 import misc
 
-def fillJunctions(backbone_graph, GEMlist):
+def fillJunctions(backbone_graph, GEMlist, barcode_factor):
     '''Fill the Linkgraph junctions with short contigs.
 
     Connections section of the linkgraph is filled using the barcodes of
@@ -27,13 +27,13 @@ def fillJunctions(backbone_graph, GEMlist):
     Args:
         backbone_graph (Linkgraph)
         GEMlist (dict)
+        barcode_factor (int)
 
     Returns:
         list: list of paths with junctions filled.
     '''
 
     filled_junction_paths = []
-    barcode_factor = 15 # hardcoded, for now
 
     # Iterate over paths and every junction in the path
     # Create a barcode comparison of the junction and all small contigs

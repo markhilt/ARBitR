@@ -135,8 +135,7 @@ class Linkgraph:
         return connected_nodes
 
     def extend(self,node):
-        '''
-        Returns a connected node to the given node, if there is
+        '''Returns a connected node to the given node, if there is
         an unambiguous connection. The connected node must have
         no other incoming edges.
         There are some possibilities:
@@ -183,20 +182,6 @@ class Linkgraph:
                 if len(opp_outg) == 1 and opp_outg[0] == third_node:
                     return Junction(node, connected_node, [], GEMs[node]|GEMs[connected_node])
 
-
-                #else:
-                #    return Junction(node, connections[0], [], GEMs[node]|GEMs[connections[0]])
-                    # Check that this connection can be extended and the connection
-                    # only leads back to this contig
-                    #conn_node = self.getNodes(connections[0])
-                    #conn_node.remove(node)
-
-                    #if len(self.getNodes(conn_node[0])) == 2:
-                        #if self.getNodes(conn_node[0])[0][:-1] == self.getNodes(conn_node[0])[1][:-1] \
-                        #and len(self.getNodes(self.opposite(connections[0]))) == 1:
-                        #    return Junction(node, connections[0], [], GEMs[node]|GEMs[connections[0]])
-
-
         # Check alternatives with two outgoing edges
         elif len(connections) == 2:
             if connections[0][:-1] == connections[1][:-1]:
@@ -225,11 +210,11 @@ class Linkgraph:
 
                 # Connections are uneven, but a path may still be found
                 elif len(self.getNodes(connections[0])) == 1 \
-                and (len(self.getNodes(connections[1])) == 2 \
+                and (len(self.getNodes(connections[1])) > 1 \
                 and node in set(self.getNodes(connections[1]))):
                     return Junction(node, connections[0], [], GEMs[node]|GEMs[connections[0]])
                 elif len(self.getNodes(connections[1])) == 1 \
-                and (len(self.getNodes(connections[0])) == 2 \
+                and (len(self.getNodes(connections[0])) > 1 \
                 and node in self.getNodes(connections[0])):
                     return Junction(node, connections[1], [], GEMs[node]|GEMs[connections[1]])
 

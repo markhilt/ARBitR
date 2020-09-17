@@ -56,7 +56,11 @@ parser.add_argument("-m","--molecule_size", \
                     this size should be rare. [45000]", \
                     default = 45000, \
                     type = int)
-parser.add_argument("-F","--barcode_fraction", \
+parser.add_argument("-n","--n_proc", \
+                    help="Number of processes to run during scaffolding. [1]", \
+                    default = 1, \
+                    type = int)
+parser.add_argument("-r","--barcode_fraction", \
                     help="Minimum fraction of shared barcodes to create a link. \
                     [0.01]", \
                     default = 0.01, \
@@ -74,16 +78,16 @@ parser.add_argument("-Q","--short_mapq", \
                     default = 20, \
                     type = int)
 parser.add_argument("-B","--short_bc_quant", \
-                    help="Minimum number of reads per barcode. [2]", \
+                    help="Minimum number of reads per barcode in short contigs. [2]", \
                     default = 2, \
+                    type = int)
+parser.add_argument("-F","--short_barcode_factor", \
+                    help="Factor to determine outliers in short contigs. [25]", \
+                    default = 25, \
                     type = int)
 parser.add_argument("-c","--coverage", \
                     help="Coverage cutoff for trimming contig ends. [20]", \
                     default = 20, \
-                    type = int)
-parser.add_argument("-g","--gapsize", \
-                    help="Gapsize for building scaffolds. [100]", \
-                    default = 100, \
                     type = int)
 parser.add_argument("-b","--bc_quantity", \
                     help="Minimum number of reads per barcode. [3]", \
@@ -145,13 +149,15 @@ def main():
     region_size = args.region_size
     molecule_size = args.molecule_size
     mapq = args.mapq
+    n_proc = args.n_proc
     short_mapq = args.short_mapq
     short_bc_quant = args.short_bc_quant
+    short_bc_factor = args.short_barcode_factor
     barcode_factor = args.barcode_factor
     barcode_fraction = args.barcode_fraction
     mincov = args.coverage
     bc_quantity = args.bc_quantity
-    gapsize = args.gapsize
+    gapsize = 100
 
     if region_size > molecule_size:
         misc.printstatus(   "Larger --region_size than --molecule_size detected. \
@@ -175,17 +181,17 @@ def main():
     # First step is to collect the barcodes for the backbone graph
     misc.printstatus("Collecting barcodes for linkgraph.")
     GEMlist = barcode_collection.main(  args.input_bam, \
-                                            backbone_contig_lengths, \
-                                            region_size, \
-                                            mapq, \
-                                            bc_quantity)
+                                        backbone_contig_lengths, \
+                                        region_size, \
+                                        mapq, \
+                                        bc_quantity)
 
     # Second step is to build the link graph based on the barcodes
     misc.printstatus("Creating link graph.")
     backbone_graph = graph_building.main(backbone_contig_lengths, \
-                                            GEMlist, \
-                                            barcode_factor, \
-                                            barcode_fraction)
+                                        GEMlist, \
+                                        barcode_factor, \
+                                        barcode_fraction)
 
     misc.printstatus("Writing link graph to {}.backbone.gfa.".format(outfilename))
     writeGfa(outfilename+".backbone", backbone_contig_lengths, backbone_graph)
@@ -201,15 +207,15 @@ def main():
     # this time for the small contigs
     misc.printstatus("Collecting barcodes from short contigs.")
     GEMlist = barcode_collection.main(  args.input_bam, \
-                                            small_contig_lengths, \
-                                            molecule_size, \
-                                            short_mapq, \
-                                            short_bc_quant)
+                                        small_contig_lengths, \
+                                        molecule_size, \
+                                        short_mapq, \
+                                        short_bc_quant)
 
     # Fifth step is to pull in the short contigs into the linkgraph junctions,
     # if they have
     # Sixth step is to fill the junctions in the backbone_graph
-    paths = fill_junctions.fillJunctions(backbone_graph, GEMlist)
+    paths = fill_junctions.fillJunctions(backbone_graph, GEMlist, short_bc_factor)
 
     writePaths( outfilename+".pre-merge", \
                 {str(idx):path for idx, path in enumerate(paths)})
@@ -223,7 +229,8 @@ def main():
                                 args.input_bam, \
                                 paths, \
                                 mincov, \
-                                gapsize)
+                                gapsize, \
+                                n_proc)
         misc.printstatus("Writing merged fasta to {0}.fasta".format(outfilename))
         writeFasta(outfilename,new_scaffolds)
         writePaths(outfilename+".correspondence", scaffold_correspondence)
@@ -232,8 +239,10 @@ def main():
     else:
         misc.printstatus("No fasta file found for merging. Pipeline finished.")
 
-    if os.path.isfile("tmp.fasta"):
-        os.remove("tmp.fasta")
+    # Cleanup temp files
+    tmp_files = [file for file in os.listdir() if file.endswith(".tmp.fasta")]
+    for tmp in tmp_files:
+        os.remove(tmp)
 
     misc.printstatus("ARBitR successfully completed!\n")
 
