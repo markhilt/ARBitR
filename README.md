@@ -35,8 +35,8 @@ ARBitR is written and implemented in Python 3.
 ## stLFR support
 Starting from v0.2, ARBitR supports [stLFR](https://pubmed.ncbi.nlm.nih.gov/30940689/) linked reads. After [stLFR reads have been demultiplexed](https://github.com/stLFR/stLFR_read_demux), the read barcodes have to be moved to the BX tag as a fastq comment. The ARBitR script ARBitR/util/convert_fastq.py can be used for this purpose (for both forward and reverse reads, if in separate files). Then map as usual, e.g:
 ```
-./util/convert_fastq.py <reads>_R1.fastq | pigz > <reads>_converted_R1.fastq.gz
-./util/convert_fastq.py <reads>_R2.fastq | pigz > <reads>_converted_R2.fastq.gz
+./utils/convert_fastq.py <reads>_R1.fastq | pigz > <reads>_converted_R1.fastq.gz
+./utils/convert_fastq.py <reads>_R2.fastq | pigz > <reads>_converted_R2.fastq.gz
 bwa mem -t15 -C -M genome.fa <reads>_converted_R1.fastq.gz <reads>_converted_R2.fastq.gz | samtools view -@15 -bS - | samtools sort -@ 15 - -o genome.sorted.bam
 ```
 
