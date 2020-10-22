@@ -4,6 +4,7 @@ ARBitR is an overlap aware genome assembly scaffolder for linked sequencing read
 
 ## Dependencies
 - Python3
+
 The python packages:
 - [numpy](https://numpy.org/)
 - [scipy](https://www.scipy.org/)
